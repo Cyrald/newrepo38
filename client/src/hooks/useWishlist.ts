@@ -17,7 +17,7 @@ export function useAddToWishlist() {
 
   return useMutation({
     mutationFn: (productId: string) => wishlistApi.add(productId),
-    onSuccess: () => {
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["wishlist"] });
     },
   });
@@ -28,7 +28,7 @@ export function useRemoveFromWishlist() {
 
   return useMutation({
     mutationFn: (productId: string) => wishlistApi.remove(productId),
-    onSuccess: () => {
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["wishlist"] });
     },
   });
