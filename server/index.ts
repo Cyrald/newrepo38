@@ -1,8 +1,30 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import helmet from "helmet";
+import cookieParser from "cookie-parser";
+import { env } from "./env";
 
 const app = express();
+
+app.use(helmet({
+  contentSecurityPolicy: env.NODE_ENV === 'production' ? {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'"],
+      imgSrc: ["'self'", "data:", "https:", "blob:"],
+      connectSrc: ["'self'", "ws:", "wss:"],
+      fontSrc: ["'self'", "data:"],
+      objectSrc: ["'none'"],
+      mediaSrc: ["'self'"],
+      frameSrc: ["'self'"],
+    },
+  } : false,
+  crossOriginEmbedderPolicy: false,
+}));
+
+app.use(cookieParser());
 
 declare module 'http' {
   interface IncomingMessage {
@@ -49,12 +71,27 @@ app.use((req, res, next) => {
 (async () => {
   const server = await registerRoutes(app);
 
-  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+  app.use((err: any, req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
-
+    
+    console.error('Error:', {
+      message: err.message,
+      stack: env.NODE_ENV === 'development' ? err.stack : undefined,
+      path: req.path,
+      method: req.method,
+      userId: req.userId,
+    });
+    
+    let message: string;
+    if (status >= 500) {
+      message = "Внутренняя ошибка сервера";
+    } else if (status >= 400 && status < 500) {
+      message = err.message || "Некорректный запрос";
+    } else {
+      message = err.message || "Ошибка сервера";
+    }
+    
     res.status(status).json({ message });
-    throw err;
   });
 
   // importantly only setup vite in development and after
@@ -70,7 +107,7 @@ app.use((req, res, next) => {
   // Other ports are firewalled. Default to 5000 if not specified.
   // this serves both the API and the client.
   // It is the only port that is not firewalled.
-  const port = parseInt(process.env.PORT || '5000', 10);
+  const port = parseInt(env.PORT, 10);
   server.listen({
     port,
     host: "0.0.0.0",

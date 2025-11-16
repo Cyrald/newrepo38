@@ -33,7 +33,7 @@ export default function ProductDetailPage() {
   const [quantity, setQuantity] = useState(1)
   const [selectedImage, setSelectedImage] = useState(0)
 
-  const relatedProducts = []
+  const relatedProducts: any[] = []
   
   // Check if product is in wishlist
   const wishlistProductIds = new Set((wishlistItems || []).map((item: any) => item.productId))
@@ -116,11 +116,9 @@ export default function ProductDetailPage() {
     }
   }
 
-  const images = product.images || []
-  const reviews = product.reviews || []
-  const avgRating = reviews.length > 0
-    ? reviews.reduce((sum: number, r: any) => sum + r.rating, 0) / reviews.length
-    : 0
+  const images = (product as any).images || []
+  const reviews: any[] = []
+  const avgRating = parseFloat(product.rating || "0")
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -137,12 +135,10 @@ export default function ProductDetailPage() {
             <Link href="/catalog">
               <span className="hover:underline">Каталог</span>
             </Link>
-            {product.category && (
+            {product.categoryId && (
               <>
                 <span>/</span>
-                <Link href={`/catalog?category=${product.category.slug}`}>
-                  <span className="hover:underline">{product.category.name}</span>
-                </Link>
+                <span>Категория</span>
               </>
             )}
             <span>/</span>
@@ -209,18 +205,16 @@ export default function ProductDetailPage() {
                   <h1 className="mb-2 font-serif text-3xl font-semibold" data-testid="text-product-name">
                     {product.name}
                   </h1>
-                  {product.category && (
-                    <Link href={`/catalog?category=${product.category.slug}`}>
-                      <Badge variant="outline" className="hover-elevate">
-                        {product.category.name}
-                      </Badge>
-                    </Link>
+                  {product.isNew && (
+                    <Badge variant="outline" className="hover-elevate">
+                      Новинка
+                    </Badge>
                   )}
                 </div>
               </div>
 
               {/* Rating */}
-              {reviews.length > 0 && (
+              {avgRating > 0 && (
                 <div className="mb-4 flex items-center gap-2">
                   <div className="flex">
                     {[1, 2, 3, 4, 5].map((star) => (
@@ -235,7 +229,7 @@ export default function ProductDetailPage() {
                     ))}
                   </div>
                   <span className="text-sm text-muted-foreground">
-                    {avgRating.toFixed(1)} ({reviews.length} отзывов)
+                    {avgRating.toFixed(1)} ({product.reviewsCount || 0} отзывов)
                   </span>
                 </div>
               )}
@@ -245,15 +239,15 @@ export default function ProductDetailPage() {
                 <p className="text-4xl font-bold text-primary" data-testid="text-product-price">
                   {parseFloat(product.price)} ₽
                 </p>
-                {product.oldPrice && (
-                  <p className="text-lg text-muted-foreground line-through">
-                    {parseFloat(product.oldPrice)} ₽
+                {parseFloat(product.discountPercentage || "0") > 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    Скидка {product.discountPercentage}%
                   </p>
                 )}
               </div>
 
               {/* Stock Status */}
-              {product.inStock ? (
+              {product.stockQuantity > 0 ? (
                 <Badge className="mb-6" variant="default">В наличии</Badge>
               ) : (
                 <Badge className="mb-6" variant="destructive">Нет в наличии</Badge>
@@ -261,7 +255,7 @@ export default function ProductDetailPage() {
 
               {/* Description */}
               <p className="mb-6 text-muted-foreground">
-                {product.shortDescription || product.description}
+                {product.description}
               </p>
 
               <Separator className="my-6" />
@@ -308,7 +302,7 @@ export default function ProductDetailPage() {
                   size="lg"
                   className="flex-1"
                   onClick={handleAddToCart}
-                  disabled={!product.inStock}
+                  disabled={product.stockQuantity <= 0}
                   data-testid="button-add-to-cart"
                 >
                   <ShoppingCart className="mr-2 h-5 w-5" />
@@ -361,16 +355,16 @@ export default function ProductDetailPage() {
                         <span>{product.volume} мл</span>
                       </div>
                     )}
-                    {product.manufacturer && (
+                    {product.composition && (
                       <div className="flex justify-between py-2 border-b">
-                        <span className="font-medium">Производитель:</span>
-                        <span>{product.manufacturer}</span>
+                        <span className="font-medium">Состав:</span>
+                        <span>{product.composition}</span>
                       </div>
                     )}
-                    {product.country && (
+                    {product.sku && (
                       <div className="flex justify-between py-2 border-b">
-                        <span className="font-medium">Страна:</span>
-                        <span>{product.country}</span>
+                        <span className="font-medium">Артикул:</span>
+                        <span>{product.sku}</span>
                       </div>
                     )}
                   </div>

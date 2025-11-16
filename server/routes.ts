@@ -26,34 +26,57 @@ import {
   createOrderSchema,
 } from "@shared/schema";
 import { z } from "zod";
+import {
+  authLimiter,
+  registerLimiter,
+  promocodeValidationLimiter,
+} from "./middleware/rateLimiter";
+import { sanitizeSearchQuery, sanitizeNumericParam, sanitizeId } from "./utils/sanitize";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
   const wss = new WebSocketServer({ server: httpServer, path: "/ws" });
 
   wss.on("connection", async (ws: any, req: any) => {
-    const token = new URL(req.url!, `http://${req.headers.host}`).searchParams.get("token");
+    let userId: string | null = null;
+    let isAuthenticated = false;
     
-    if (!token) {
-      ws.close(1008, "Требуется токен аутентификации");
-      return;
-    }
+    const authTimeout = setTimeout(() => {
+      if (!isAuthenticated) {
+        ws.close(1008, "Время ожидания аутентификации истекло");
+      }
+    }, 10000);
 
-    const { verifyToken } = await import("./auth");
-    const payload = verifyToken(token);
-    
-    if (!payload) {
-      ws.close(1008, "Недействительный токен");
-      return;
-    }
-
-    const userId = payload.userId;
-    
     ws.on("message", async (data: any) => {
       try {
         const message = JSON.parse(data.toString());
         
-        if (message.type === "chat_message") {
+        if (!isAuthenticated) {
+          if (message.type === "auth" && message.token) {
+            const { verifyToken } = await import("./auth");
+            const payload = verifyToken(message.token);
+            
+            if (!payload) {
+              ws.close(1008, "Недействительный токен");
+              return;
+            }
+            
+            userId = payload.userId;
+            isAuthenticated = true;
+            clearTimeout(authTimeout);
+            
+            ws.send(JSON.stringify({
+              type: "auth_success",
+              message: "Аутентификация успешна",
+            }));
+            return;
+          } else {
+            ws.close(1008, "Требуется аутентификация");
+            return;
+          }
+        }
+        
+        if (message.type === "chat_message" && userId) {
           const supportMessage = await storage.createSupportMessage({
             userId,
             senderId: userId,
@@ -73,9 +96,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error("WebSocket message error:", error);
       }
     });
+    
+    ws.on("close", () => {
+      clearTimeout(authTimeout);
+    });
   });
 
-  app.post("/api/auth/register", async (req, res) => {
+  app.post("/api/auth/register", registerLimiter, async (req, res) => {
     try {
       const data = registerSchema.parse(req.body);
 
@@ -131,7 +158,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/auth/login", async (req, res) => {
+  app.post("/api/auth/login", authLimiter, async (req, res) => {
     try {
       const data = loginSchema.parse(req.body);
 
@@ -512,22 +539,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         offset = "0",
       } = req.query;
 
-      const limitNum = parseInt(limit as string);
-      const offsetNum = parseInt(offset as string);
+      const limitNum = Math.min(sanitizeNumericParam(limit as string, 20), 100);
+      const offsetNum = sanitizeNumericParam(offset as string, 0);
+      const sanitizedSearch = sanitizeSearchQuery(search as string);
 
       let categoryIdsArray: string[] | undefined;
       if (categoryIds) {
-        categoryIdsArray = typeof categoryIds === 'string' 
-          ? categoryIds.split(',').filter(Boolean)
+        const rawIds = typeof categoryIds === 'string' 
+          ? categoryIds.split(',')
           : categoryIds as string[];
+        categoryIdsArray = rawIds
+          .map(id => sanitizeId(id))
+          .filter((id): id is string => id !== null);
       }
 
       const result = await storage.getProducts({
-        categoryId: !categoryIdsArray ? (categoryId as string) : undefined,
+        categoryId: !categoryIdsArray ? sanitizeId(categoryId as string) || undefined : undefined,
         categoryIds: categoryIdsArray,
-        search: search as string,
-        minPrice: minPrice ? parseFloat(minPrice as string) : undefined,
-        maxPrice: maxPrice ? parseFloat(maxPrice as string) : undefined,
+        search: sanitizedSearch,
+        minPrice: minPrice ? Math.max(0, parseFloat(minPrice as string)) : undefined,
+        maxPrice: maxPrice ? Math.max(0, parseFloat(maxPrice as string)) : undefined,
         isNew: isNew === "true" ? true : undefined,
         sortBy: sortBy as "price_asc" | "price_desc" | "popularity" | "newest" | "rating" | undefined,
         limit: limitNum,
@@ -550,7 +581,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/products/:id", async (req, res) => {
     try {
-      const product = await storage.getProduct(req.params.id);
+      const productId = sanitizeId(req.params.id);
+      if (!productId) {
+        return res.status(400).json({ message: "Неверный ID товара" });
+      }
+
+      const product = await storage.getProduct(productId);
       if (!product) {
         return res.status(404).json({ message: "Товар не найден" });
       }
@@ -809,7 +845,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/promocodes/validate", authenticateToken, async (req, res) => {
+  app.post("/api/promocodes/validate", authenticateToken, promocodeValidationLimiter, async (req, res) => {
     try {
       const { code, orderAmount } = req.body;
       const result = await validatePromocode(code, req.userId!, orderAmount);
