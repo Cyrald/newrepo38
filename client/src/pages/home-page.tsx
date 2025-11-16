@@ -12,6 +12,7 @@ import { ProductCard } from "@/components/product-card"
 import { CategoryCard } from "@/components/category-card"
 import { useCategories } from "@/hooks/useCategories"
 import { useProducts } from "@/hooks/useProducts"
+import { useWishlist } from "@/hooks/useWishlist"
 
 export default function HomePage() {
   const { data: categories, isLoading: categoriesLoading } = useCategories()
@@ -19,6 +20,7 @@ export default function HomePage() {
     sortBy: "newest",
     limit: 4,
   })
+  const { data: wishlistItems } = useWishlist()
 
   const featuredCategories = categories?.slice(0, 3) || []
   
@@ -29,6 +31,8 @@ export default function HomePage() {
   }
 
   const newProducts = newProductsData?.products || []
+  // Create a Set of wishlist product IDs for quick lookup (empty for unauthenticated users)
+  const wishlistProductIds = new Set((wishlistItems || []).map((item: any) => item.productId))
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -99,7 +103,11 @@ export default function HomePage() {
               </div>
               <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {newProducts.slice(0, 4).map((product: any) => (
-                  <ProductCard key={product.id} product={product} />
+                  <ProductCard 
+                    key={product.id} 
+                    product={product}
+                    isInWishlist={wishlistProductIds.has(product.id)}
+                  />
                 ))}
               </div>
             </div>

@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { useRoute, Link } from "wouter"
-import { ShoppingCart, Heart, GitCompare, Star, Plus, Minus, ArrowLeft } from "lucide-react"
+import { ShoppingCart, Heart, Star, Plus, Minus, ArrowLeft } from "lucide-react"
 import { Header } from "@/components/header"
 import { Footer } from "@/components/footer"
 import { Button } from "@/components/ui/button"
@@ -26,7 +26,6 @@ export default function ProductDetailPage() {
   const [quantity, setQuantity] = useState(1)
   const [selectedImage, setSelectedImage] = useState(0)
   const [isInWishlist, setIsInWishlist] = useState(false)
-  const [isInComparison, setIsInComparison] = useState(false)
 
   const relatedProducts = []
 
@@ -75,10 +74,6 @@ export default function ProductDetailPage() {
 
   const handleToggleWishlist = () => {
     setIsInWishlist(!isInWishlist)
-  }
-
-  const handleToggleComparison = () => {
-    setIsInComparison(!isInComparison)
   }
 
   const images = product.images || []
@@ -286,16 +281,7 @@ export default function ProductDetailPage() {
                   onClick={handleToggleWishlist}
                   data-testid="button-toggle-wishlist"
                 >
-                  <Heart className={`h-5 w-5 ${isInWishlist ? "fill-current text-primary" : ""}`} />
-                </Button>
-
-                <Button
-                  size="lg"
-                  variant="outline"
-                  onClick={handleToggleComparison}
-                  data-testid="button-toggle-comparison"
-                >
-                  <GitCompare className={`h-5 w-5 ${isInComparison ? "text-primary" : ""}`} />
+                  <Heart className={`h-5 w-5 ${isInWishlist ? "fill-red-500 text-red-500" : ""}`} />
                 </Button>
               </div>
             </div>

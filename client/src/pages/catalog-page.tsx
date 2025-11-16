@@ -29,14 +29,16 @@ import { Input } from "@/components/ui/input"
 import { useProducts } from "@/hooks/useProducts"
 import { useCategories } from "@/hooks/useCategories"
 import { useAddToCart } from "@/hooks/useCart"
-import { useAddToWishlist } from "@/hooks/useWishlist"
+import { useAddToWishlist, useWishlist } from "@/hooks/useWishlist"
 import { useToast } from "@/hooks/use-toast"
+import { useAuthStore } from "@/stores/authStore"
 
 export default function CatalogPage() {
   const [, params] = useRoute("/catalog")
   const [location, setLocation] = useLocation()
   const searchParams = useSearch()
   const urlParams = new URLSearchParams(searchParams)
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
   
   const [sortBy, setSortBy] = useState<"price_asc" | "price_desc" | "popularity" | "newest" | "rating">(
     (urlParams.get("sort") as any) || "newest"
@@ -63,6 +65,7 @@ export default function CatalogPage() {
 
   const addToCart = useAddToCart()
   const addToWishlist = useAddToWishlist()
+  const { data: wishlistItems } = useWishlist()
   const { toast } = useToast()
 
   const categories = categoriesData || []
@@ -70,6 +73,9 @@ export default function CatalogPage() {
   const total = productsData?.total || 0
   const totalPages = productsData?.totalPages || 1
   const isLoading = productsLoading
+  
+  // Create a Set of wishlist product IDs for quick lookup (empty for unauthenticated users)
+  const wishlistProductIds = new Set((wishlistItems || []).map((item: any) => item.productId))
 
   // Sync input with URL changes (for browser back/forward and direct URL loads)
   useEffect(() => {
@@ -147,6 +153,17 @@ export default function CatalogPage() {
   }
 
   const handleAddToWishlist = async (productId: string) => {
+    // Require authentication for wishlist
+    if (!isAuthenticated) {
+      toast({
+        title: "Требуется вход",
+        description: "Пожалуйста, войдите чтобы добавить товар в избранное",
+        variant: "default",
+      })
+      setLocation(`/login?returnUrl=${location}`)
+      return
+    }
+    
     try {
       await addToWishlist.mutateAsync(productId)
       toast({
@@ -331,7 +348,8 @@ export default function CatalogPage() {
                         key={product.id} 
                         product={product}
                         onAddToCart={handleAddToCart}
-                        onAddToWishlist={handleAddToWishlist}
+                        onAddToWishlist={isAuthenticated ? handleAddToWishlist : undefined}
+                        isInWishlist={wishlistProductIds.has(product.id)}
                       />
                     ))}
                   </div>

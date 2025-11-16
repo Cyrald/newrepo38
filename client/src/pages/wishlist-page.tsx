@@ -99,6 +99,7 @@ export default function WishlistPage() {
                   product={item.product}
                   onAddToCart={handleAddToCart}
                   onAddToWishlist={handleRemoveFromWishlist}
+                  isInWishlist={true}
                 />
               ))}
             </div>
