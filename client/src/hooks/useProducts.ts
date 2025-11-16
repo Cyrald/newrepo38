@@ -4,6 +4,7 @@ import type { Product } from "@shared/schema";
 
 interface UseProductsParams {
   categoryId?: string;
+  categoryIds?: string[];
   minPrice?: number;
   maxPrice?: number;
   search?: string;

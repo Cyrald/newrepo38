@@ -41,7 +41,7 @@ export default function CatalogPage() {
 
   const { data: categoriesData, isLoading: categoriesLoading } = useCategories()
   const { data: productsData, isLoading: productsLoading } = useProducts({
-    categoryId: selectedCategories.length > 0 ? selectedCategories[0] : undefined,
+    categoryIds: selectedCategories.length > 0 ? selectedCategories : undefined,
     minPrice: priceRange[0],
     maxPrice: priceRange[1],
     sortBy: sortBy,
@@ -51,6 +51,7 @@ export default function CatalogPage() {
 
   const categories = categoriesData || []
   const products = productsData?.products || []
+  const total = productsData?.total || 0
   const isLoading = productsLoading
 
   const handleCategoryToggle = (categoryId: string) => {
@@ -163,12 +164,12 @@ export default function CatalogPage() {
                   </Sheet>
 
                   <span className="text-sm text-muted-foreground">
-                    Найдено: {products.length}
+                    Найдено: {total} {total === 1 ? 'товар' : total > 1 && total < 5 ? 'товара' : 'товаров'}
                   </span>
                 </div>
 
                 {/* Sort */}
-                <Select value={sortBy} onValueChange={setSortBy}>
+                <Select value={sortBy} onValueChange={(value) => setSortBy(value as typeof sortBy)}>
                   <SelectTrigger className="w-[180px]" data-testid="select-sort">
                     <SelectValue placeholder="Сортировка" />
                   </SelectTrigger>

@@ -68,13 +68,15 @@ export interface IStorage {
   
   getProducts(filters?: {
     categoryId?: string;
+    categoryIds?: string[];
     search?: string;
     minPrice?: number;
     maxPrice?: number;
     isNew?: boolean;
+    sortBy?: "price_asc" | "price_desc" | "popularity" | "newest" | "rating";
     limit?: number;
     offset?: number;
-  }): Promise<Product[]>;
+  }): Promise<{ products: Product[], total: number }>;
   getProduct(id: string): Promise<Product | undefined>;
   getProductBySku(sku: string): Promise<Product | undefined>;
   createProduct(product: InsertProduct): Promise<Product>;
@@ -209,19 +211,23 @@ export class DatabaseStorage implements IStorage {
 
   async getProducts(filters?: {
     categoryId?: string;
+    categoryIds?: string[];
     search?: string;
     minPrice?: number;
     maxPrice?: number;
     isNew?: boolean;
+    sortBy?: "price_asc" | "price_desc" | "popularity" | "newest" | "rating";
     limit?: number;
     offset?: number;
-  }): Promise<Product[]> {
-    let query = db.select().from(products);
-
+  }): Promise<{ products: Product[], total: number }> {
     const conditions = [eq(products.isArchived, false)];
     
     if (filters?.categoryId) {
       conditions.push(eq(products.categoryId, filters.categoryId));
+    }
+    if (filters?.categoryIds && filters.categoryIds.length > 0) {
+      const categoryConditions = filters.categoryIds.map(id => eq(products.categoryId, id));
+      conditions.push(or(...categoryConditions)!);
     }
     if (filters?.search) {
       conditions.push(
@@ -241,18 +247,44 @@ export class DatabaseStorage implements IStorage {
       conditions.push(eq(products.isNew, filters.isNew));
     }
 
-    query = query.where(and(...conditions)!) as any;
+    const [countResult] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(products)
+      .where(and(...conditions)!);
+    
+    const total = Number(countResult.count);
 
-    query = query.orderBy(desc(products.createdAt)) as any;
+    let query = db.select().from(products).where(and(...conditions)!) as any;
+
+    switch (filters?.sortBy) {
+      case "price_asc":
+        query = query.orderBy(products.price);
+        break;
+      case "price_desc":
+        query = query.orderBy(desc(products.price));
+        break;
+      case "popularity":
+        query = query.orderBy(desc(products.viewCount));
+        break;
+      case "rating":
+        query = query.orderBy(desc(products.rating));
+        break;
+      case "newest":
+      default:
+        query = query.orderBy(desc(products.createdAt));
+        break;
+    }
 
     if (filters?.limit) {
-      query = query.limit(filters.limit) as any;
+      query = query.limit(filters.limit);
     }
     if (filters?.offset) {
-      query = query.offset(filters.offset) as any;
+      query = query.offset(filters.offset);
     }
 
-    return query;
+    const productsResult = await query;
+    
+    return { products: productsResult, total };
   }
 
   async getProduct(id: string): Promise<Product | undefined> {

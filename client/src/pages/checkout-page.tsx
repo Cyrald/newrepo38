@@ -164,9 +164,9 @@ export default function CheckoutPage() {
       const orderItems = cartItems.map((item) => ({
         productId: item.productId,
         name: item.product?.name || "",
-        price: parseFloat(item.product?.price || "0"),
+        price: item.product?.price || "0",
         quantity: item.quantity,
-        discount: parseFloat(item.product?.discountPercentage || "0"),
+        discount: item.product?.discountPercentage || "0",
       }))
 
       await createOrder.mutateAsync({

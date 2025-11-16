@@ -487,10 +487,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const {
         categoryId,
+        categoryIds,
         search,
         minPrice,
         maxPrice,
         isNew,
+        sortBy,
         limit = "20",
         offset = "0",
       } = req.query;
@@ -498,22 +500,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const limitNum = parseInt(limit as string);
       const offsetNum = parseInt(offset as string);
 
-      const products = await storage.getProducts({
-        categoryId: categoryId as string,
+      let categoryIdsArray: string[] | undefined;
+      if (categoryIds) {
+        categoryIdsArray = typeof categoryIds === 'string' 
+          ? categoryIds.split(',').filter(Boolean)
+          : categoryIds as string[];
+      }
+
+      const result = await storage.getProducts({
+        categoryId: !categoryIdsArray ? (categoryId as string) : undefined,
+        categoryIds: categoryIdsArray,
         search: search as string,
         minPrice: minPrice ? parseFloat(minPrice as string) : undefined,
         maxPrice: maxPrice ? parseFloat(maxPrice as string) : undefined,
         isNew: isNew === "true" ? true : undefined,
+        sortBy: sortBy as "price_asc" | "price_desc" | "popularity" | "newest" | "rating" | undefined,
         limit: limitNum,
         offset: offsetNum,
       });
 
       const page = Math.floor(offsetNum / limitNum) + 1;
-      const totalPages = Math.ceil(products.length / limitNum);
+      const totalPages = Math.ceil(result.total / limitNum);
 
       res.json({
-        products,
-        total: products.length,
+        products: result.products,
+        total: result.total,
         page,
         totalPages,
       });

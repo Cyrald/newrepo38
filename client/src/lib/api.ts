@@ -123,6 +123,7 @@ export const categoriesApi = {
 export const productsApi = {
   getAll: (params?: {
     categoryId?: string;
+    categoryIds?: string[];
     minPrice?: number;
     maxPrice?: number;
     search?: string;
@@ -134,7 +135,11 @@ export const productsApi = {
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
         if (value !== undefined) {
-          searchParams.append(key, value.toString());
+          if (key === 'categoryIds' && Array.isArray(value)) {
+            searchParams.append('categoryIds', value.join(','));
+          } else if (key !== 'categoryIds') {
+            searchParams.append(key, value.toString());
+          }
         }
       });
     }
