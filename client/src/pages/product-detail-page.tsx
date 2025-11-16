@@ -1,0 +1,415 @@
+import { useState } from "react"
+import { useRoute, Link } from "wouter"
+import { ShoppingCart, Heart, GitCompare, Star, Plus, Minus, ArrowLeft } from "lucide-react"
+import { Header } from "@/components/header"
+import { Footer } from "@/components/footer"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Separator } from "@/components/ui/separator"
+import { Input } from "@/components/ui/input"
+import { PageLoadingSkeleton } from "@/components/loading-state"
+import { ProductCard } from "@/components/product-card"
+import { useProduct } from "@/hooks/useProducts"
+import { useAddToCart } from "@/hooks/useCart"
+import { useToast } from "@/hooks/use-toast"
+
+export default function ProductDetailPage() {
+  const [, params] = useRoute("/products/:id")
+  const productId = params?.id || ""
+  
+  const { toast } = useToast()
+  const { data: product, isLoading } = useProduct(productId)
+  const addToCartMutation = useAddToCart()
+
+  const [quantity, setQuantity] = useState(1)
+  const [selectedImage, setSelectedImage] = useState(0)
+  const [isInWishlist, setIsInWishlist] = useState(false)
+  const [isInComparison, setIsInComparison] = useState(false)
+
+  const relatedProducts = []
+
+  if (isLoading) {
+    return <PageLoadingSkeleton />
+  }
+
+  if (!product) {
+    return (
+      <div className="min-h-screen flex flex-col">
+        <Header />
+        <main className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <h1 className="text-2xl font-serif font-semibold mb-2">Товар не найден</h1>
+            <Link href="/catalog">
+              <Button variant="outline">Вернуться в каталог</Button>
+            </Link>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    )
+  }
+
+  const handleAddToCart = async () => {
+    if (!product) return
+    
+    try {
+      await addToCartMutation.mutateAsync({
+        productId: product.id,
+        quantity,
+      })
+      
+      toast({
+        title: "Добавлено в корзину",
+        description: `${product.name} (${quantity} шт.)`,
+      })
+    } catch (error: any) {
+      toast({
+        title: "Ошибка",
+        description: error.message || "Не удалось добавить товар в корзину",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const handleToggleWishlist = () => {
+    setIsInWishlist(!isInWishlist)
+  }
+
+  const handleToggleComparison = () => {
+    setIsInComparison(!isInComparison)
+  }
+
+  const images = product.images || []
+  const reviews = product.reviews || []
+  const avgRating = reviews.length > 0
+    ? reviews.reduce((sum: number, r: any) => sum + r.rating, 0) / reviews.length
+    : 0
+
+  return (
+    <div className="min-h-screen flex flex-col">
+      <Header />
+
+      <main className="flex-1">
+        <div className="container mx-auto px-4 py-8">
+          {/* Breadcrumbs */}
+          <div className="mb-6 flex items-center gap-2 text-sm text-muted-foreground">
+            <Link href="/">
+              <span className="hover:underline">Главная</span>
+            </Link>
+            <span>/</span>
+            <Link href="/catalog">
+              <span className="hover:underline">Каталог</span>
+            </Link>
+            {product.category && (
+              <>
+                <span>/</span>
+                <Link href={`/catalog?category=${product.category.slug}`}>
+                  <span className="hover:underline">{product.category.name}</span>
+                </Link>
+              </>
+            )}
+            <span>/</span>
+            <span className="text-foreground">{product.name}</span>
+          </div>
+
+          {/* Back Button */}
+          <Button variant="ghost" className="mb-4" asChild>
+            <Link href="/catalog">
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Назад к каталогу
+            </Link>
+          </Button>
+
+          {/* Product Details */}
+          <div className="grid gap-8 lg:grid-cols-2 mb-16">
+            {/* Images */}
+            <div>
+              {/* Main Image */}
+              <div className="mb-4 aspect-square overflow-hidden rounded-lg bg-muted">
+                {images.length > 0 && images[selectedImage]?.url ? (
+                  <img
+                    src={images[selectedImage].url}
+                    alt={product.name}
+                    className="h-full w-full object-cover"
+                    data-testid="img-product-main"
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center text-muted-foreground">
+                    Нет изображения
+                  </div>
+                )}
+              </div>
+
+              {/* Thumbnail Images */}
+              {images.length > 1 && (
+                <div className="grid grid-cols-4 gap-2">
+                  {images.map((image: any, index: number) => (
+                    <button
+                      key={image.id}
+                      onClick={() => setSelectedImage(index)}
+                      className={`aspect-square overflow-hidden rounded-md border-2 transition-all ${
+                        selectedImage === index
+                          ? "border-primary"
+                          : "border-transparent hover-elevate"
+                      }`}
+                      data-testid={`button-thumbnail-${index}`}
+                    >
+                      <img
+                        src={image.url}
+                        alt={`${product.name} ${index + 1}`}
+                        className="h-full w-full object-cover"
+                      />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Product Info */}
+            <div>
+              <div className="mb-4 flex items-start justify-between">
+                <div>
+                  <h1 className="mb-2 font-serif text-3xl font-semibold" data-testid="text-product-name">
+                    {product.name}
+                  </h1>
+                  {product.category && (
+                    <Link href={`/catalog?category=${product.category.slug}`}>
+                      <Badge variant="outline" className="hover-elevate">
+                        {product.category.name}
+                      </Badge>
+                    </Link>
+                  )}
+                </div>
+              </div>
+
+              {/* Rating */}
+              {reviews.length > 0 && (
+                <div className="mb-4 flex items-center gap-2">
+                  <div className="flex">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <Star
+                        key={star}
+                        className={`h-5 w-5 ${
+                          star <= avgRating
+                            ? "fill-primary text-primary"
+                            : "text-muted-foreground"
+                        }`}
+                      />
+                    ))}
+                  </div>
+                  <span className="text-sm text-muted-foreground">
+                    {avgRating.toFixed(1)} ({reviews.length} отзывов)
+                  </span>
+                </div>
+              )}
+
+              {/* Price */}
+              <div className="mb-6">
+                <p className="text-4xl font-bold text-primary" data-testid="text-product-price">
+                  {parseFloat(product.price)} ₽
+                </p>
+                {product.oldPrice && (
+                  <p className="text-lg text-muted-foreground line-through">
+                    {parseFloat(product.oldPrice)} ₽
+                  </p>
+                )}
+              </div>
+
+              {/* Stock Status */}
+              {product.inStock ? (
+                <Badge className="mb-6" variant="default">В наличии</Badge>
+              ) : (
+                <Badge className="mb-6" variant="destructive">Нет в наличии</Badge>
+              )}
+
+              {/* Description */}
+              <p className="mb-6 text-muted-foreground">
+                {product.shortDescription || product.description}
+              </p>
+
+              <Separator className="my-6" />
+
+              {/* Quantity Selector */}
+              <div className="mb-6">
+                <label className="mb-2 block text-sm font-medium">
+                  Количество
+                </label>
+                <div className="flex items-center gap-3">
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                    disabled={quantity <= 1}
+                    data-testid="button-decrease-quantity"
+                  >
+                    <Minus className="h-4 w-4" />
+                  </Button>
+                  
+                  <Input
+                    type="number"
+                    value={quantity}
+                    onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                    className="w-20 text-center"
+                    min="1"
+                    data-testid="input-quantity"
+                  />
+                  
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setQuantity(quantity + 1)}
+                    data-testid="button-increase-quantity"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex flex-wrap gap-3">
+                <Button
+                  size="lg"
+                  className="flex-1"
+                  onClick={handleAddToCart}
+                  disabled={!product.inStock}
+                  data-testid="button-add-to-cart"
+                >
+                  <ShoppingCart className="mr-2 h-5 w-5" />
+                  Добавить в корзину
+                </Button>
+
+                <Button
+                  size="lg"
+                  variant="outline"
+                  onClick={handleToggleWishlist}
+                  data-testid="button-toggle-wishlist"
+                >
+                  <Heart className={`h-5 w-5 ${isInWishlist ? "fill-current text-primary" : ""}`} />
+                </Button>
+
+                <Button
+                  size="lg"
+                  variant="outline"
+                  onClick={handleToggleComparison}
+                  data-testid="button-toggle-comparison"
+                >
+                  <GitCompare className={`h-5 w-5 ${isInComparison ? "text-primary" : ""}`} />
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          {/* Tabs */}
+          <Tabs defaultValue="description" className="mb-16">
+            <TabsList>
+              <TabsTrigger value="description">Описание</TabsTrigger>
+              <TabsTrigger value="specifications">Характеристики</TabsTrigger>
+              <TabsTrigger value="reviews">Отзывы ({reviews.length})</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="description" className="mt-6">
+              <Card>
+                <CardContent className="p-6">
+                  <div className="prose max-w-none">
+                    <p>{product.description || "Описание отсутствует"}</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="specifications" className="mt-6">
+              <Card>
+                <CardContent className="p-6">
+                  <div className="space-y-3">
+                    {product.weight && (
+                      <div className="flex justify-between py-2 border-b">
+                        <span className="font-medium">Вес:</span>
+                        <span>{product.weight} г</span>
+                      </div>
+                    )}
+                    {product.volume && (
+                      <div className="flex justify-between py-2 border-b">
+                        <span className="font-medium">Объем:</span>
+                        <span>{product.volume} мл</span>
+                      </div>
+                    )}
+                    {product.manufacturer && (
+                      <div className="flex justify-between py-2 border-b">
+                        <span className="font-medium">Производитель:</span>
+                        <span>{product.manufacturer}</span>
+                      </div>
+                    )}
+                    {product.country && (
+                      <div className="flex justify-between py-2 border-b">
+                        <span className="font-medium">Страна:</span>
+                        <span>{product.country}</span>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="reviews" className="mt-6">
+              <div className="space-y-4">
+                {reviews.length === 0 ? (
+                  <Card>
+                    <CardContent className="p-8 text-center">
+                      <p className="text-muted-foreground">Отзывов пока нет. Будьте первым!</p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  reviews.map((review: any) => (
+                    <Card key={review.id}>
+                      <CardContent className="p-6">
+                        <div className="mb-2 flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold">{review.user.firstName}</span>
+                            <div className="flex">
+                              {[1, 2, 3, 4, 5].map((star) => (
+                                <Star
+                                  key={star}
+                                  className={`h-4 w-4 ${
+                                    star <= review.rating
+                                      ? "fill-primary text-primary"
+                                      : "text-muted-foreground"
+                                  }`}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                          <span className="text-sm text-muted-foreground">
+                            {new Date(review.createdAt).toLocaleDateString("ru-RU")}
+                          </span>
+                        </div>
+                        <p className="text-muted-foreground">{review.comment}</p>
+                      </CardContent>
+                    </Card>
+                  ))
+                )}
+              </div>
+            </TabsContent>
+          </Tabs>
+
+          {/* Related Products */}
+          {relatedProducts.length > 0 && (
+            <section>
+              <h2 className="mb-6 font-serif text-2xl font-semibold">
+                Похожие товары
+              </h2>
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+                {relatedProducts.map((relatedProduct: any) => (
+                  <ProductCard key={relatedProduct.id} product={relatedProduct} />
+                ))}
+              </div>
+            </section>
+          )}
+        </div>
+      </main>
+
+      <Footer />
+    </div>
+  )
+}

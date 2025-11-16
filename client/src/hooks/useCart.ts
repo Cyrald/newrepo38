@@ -1,0 +1,78 @@
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
+import { cartApi } from "@/lib/api";
+import { useCartStore } from "@/stores/cartStore";
+import { useAuthStore } from "@/stores/authStore";
+
+export function useCart() {
+  const setItems = useCartStore((state) => state.setItems);
+  const clear = useCartStore((state) => state.clear);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+
+  const query = useQuery({
+    queryKey: ["cart"],
+    queryFn: cartApi.get,
+    enabled: isAuthenticated,
+  });
+
+  useEffect(() => {
+    if (query.data) {
+      setItems(query.data);
+    } else if (query.error || !isAuthenticated) {
+      clear();
+    }
+  }, [query.data, query.error, isAuthenticated, setItems, clear]);
+
+  return query;
+}
+
+export function useAddToCart() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data: { productId: string; quantity: number }) =>
+      cartApi.add(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["cart"] });
+    },
+  });
+}
+
+export function useUpdateCartItem() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      productId,
+      quantity,
+    }: {
+      productId: string;
+      quantity: number;
+    }) => cartApi.update(productId, quantity),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["cart"] });
+    },
+  });
+}
+
+export function useRemoveFromCart() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (productId: string) => cartApi.remove(productId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["cart"] });
+    },
+  });
+}
+
+export function useClearCart() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () => cartApi.clear(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["cart"] });
+    },
+  });
+}
