@@ -22,6 +22,7 @@ import AdminDashboardPage from "@/pages/admin/dashboard-page";
 import AdminUsersPage from "@/pages/admin/users-page";
 import AdminProductsPage from "@/pages/admin/products-page";
 import AdminCategoriesPage from "@/pages/admin/categories-page";
+import AdminPromocodesPage from "@/pages/admin/promocodes-page";
 import AdminOrdersPage from "@/pages/admin/orders-page";
 
 function Router() {
@@ -85,6 +86,11 @@ function Router() {
       <Route path="/admin/categories">
         <ProtectedRoute roles={["admin", "marketer"]}>
           <AdminCategoriesPage />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/admin/promocodes">
+        <ProtectedRoute roles={["admin", "marketer"]}>
+          <AdminPromocodesPage />
         </ProtectedRoute>
       </Route>
       <Route path="/admin/orders">
