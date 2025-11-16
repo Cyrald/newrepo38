@@ -153,6 +153,31 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+### Multi-Role Access Control System Implementation (November 16, 2025)
+
+**Completed:**
+- ✅ Fixed backend role-based authorization system for marketers and consultants
+- ✅ Updated requireRole middleware to support multiple roles (OR logic)
+- ✅ Granted marketers full CRUD access to: categories, products, product images, promocodes, statistics
+- ✅ Created new consultant-only endpoints: /api/support/conversations, /api/support/customer-info/:userId
+- ✅ Implemented ProtectedRoute component for frontend role-based access control
+- ✅ Updated App.tsx routing with role-based guards for all protected routes
+- ✅ Enhanced AdminSidebar with dynamic menu filtering based on user roles
+- ✅ Architecture review confirmed: all endpoints properly secured, no security issues
+
+**Role Permissions Matrix:**
+- **Admin**: Full system access (users, products, categories, orders, promocodes, support, statistics)
+- **Marketer**: Product management (products, categories, product images, promocodes, statistics)
+- **Consultant**: Support only (support conversations, customer information)
+- **Customer**: Shopping features (cart, wishlist, comparison, orders)
+
+**Technical Implementation:**
+- Backend: requireRole("admin", "marketer") middleware on all marketer-accessible endpoints
+- Backend: requireRole("admin", "consultant") on consultant support endpoints
+- Frontend: ProtectedRoute component wraps routes with role checks
+- Frontend: AdminSidebar filters menu items by authenticated user roles
+- Storage: getAllSupportConversations() method for consultant conversation list view
+
 ### Replit Environment Setup (November 16, 2025)
 
 **GitHub Import Completed:**
