@@ -660,6 +660,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(400).json({ message: "Файлы не загружены" });
         }
         
+        const existingImages = await storage.getProductImages(req.params.id);
+        const placeholderImages = existingImages.filter(img => 
+          img.url.includes('placeholder') || img.url.endsWith('.svg')
+        );
+        
+        for (const placeholderImage of placeholderImages) {
+          await storage.deleteProductImage(placeholderImage.id);
+        }
+        
         const processedImages = await productImagePipeline.processBatch(files);
         
         const dbImages = [];

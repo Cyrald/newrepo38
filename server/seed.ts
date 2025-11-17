@@ -578,7 +578,7 @@ async function seed() {
     console.log("🖼️ Добавляем изображения для товаров...");
     const imageData = createdProducts.map(product => ({
       productId: product.id,
-      url: "/placeholder-product.jpg",
+      url: "/placeholder-product.svg",
       sortOrder: 0,
     }));
 
