@@ -1,5 +1,5 @@
-import { useState } from "react"
-import { Plus, Search, MoreHorizontal, Pencil, Trash2, Eye } from "lucide-react"
+import { useState, useRef, useCallback, useEffect } from "react"
+import { Plus, Search, MoreHorizontal, Pencil, Trash2, Eye, ImageIcon } from "lucide-react"
 import { useQuery } from "@tanstack/react-query"
 import { useLocation } from "wouter"
 import { AdminLayout } from "@/components/admin-layout"
@@ -30,17 +30,63 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { useToast } from "@/hooks/use-toast"
 import { productsApi } from "@/lib/api"
 import { useDeleteProduct } from "@/hooks/useProducts"
+import { useCategories } from "@/hooks/useCategories"
 import type { Product } from "@shared/schema"
+
+// Lazy loaded image component with Intersection Observer
+function LazyProductImage({ product }: { product: Product }) {
+  const [isVisible, setIsVisible] = useState(false)
+  const imgRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            setIsVisible(true)
+            observer.disconnect()
+          }
+        })
+      },
+      { rootMargin: "50px" }
+    )
+
+    if (imgRef.current) {
+      observer.observe(imgRef.current)
+    }
+
+    return () => observer.disconnect()
+  }, [])
+
+  const firstImage = (product as any).images && (product as any).images.length > 0 ? (product as any).images[0].imageUrl || (product as any).images[0].url : null
+
+  return (
+    <div ref={imgRef} className="w-12 h-16 bg-muted rounded overflow-hidden flex items-center justify-center">
+      {isVisible && firstImage ? (
+        <img
+          src={firstImage}
+          alt={product.name}
+          className="w-full h-full object-cover"
+          loading="lazy"
+        />
+      ) : (
+        <ImageIcon className="h-6 w-6 text-muted-foreground" />
+      )}
+    </div>
+  )
+}
 
 export default function AdminProductsPage() {
   const { toast } = useToast()
   const [, setLocation] = useLocation()
   const [searchQuery, setSearchQuery] = useState("")
+  const [activeTab, setActiveTab] = useState<"published" | "archived">("published")
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
@@ -51,11 +97,25 @@ export default function AdminProductsPage() {
     queryFn: () => productsApi.getAll({ limit: 10000 }),
   })
 
+  const { data: categoriesData } = useCategories()
+  const categories = categoriesData || []
+
   const deleteProduct = useDeleteProduct()
 
   const products = data?.products || []
 
-  const filteredProducts = products.filter((product) =>
+  // Create category map for quick lookup
+  const categoryMap = categories.reduce((acc, cat) => {
+    acc[cat.id] = cat.name
+    return acc
+  }, {} as Record<string, string>)
+
+  // Filter by archive status first, then by search
+  const filteredByStatus = products.filter((product) =>
+    activeTab === "published" ? !product.isArchived : product.isArchived
+  )
+
+  const filteredProducts = filteredByStatus.filter((product) =>
     product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     product.sku?.toLowerCase().includes(searchQuery.toLowerCase())
   )
@@ -110,6 +170,9 @@ export default function AdminProductsPage() {
     )
   }
 
+  const publishedCount = products.filter(p => !p.isArchived).length
+  const archivedCount = products.filter(p => p.isArchived).length
+
   return (
     <AdminLayout>
       <div className="space-y-6">
@@ -130,94 +193,109 @@ export default function AdminProductsPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Все товары</CardTitle>
+            <CardTitle>Каталог товаров</CardTitle>
             <CardDescription>
               {products.length} товаров в каталоге
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="mb-4">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder="Поиск по названию или артикулу..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9"
-                  data-testid="input-search-products"
-                />
-              </div>
-            </div>
+            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "published" | "archived")}>
+              <div className="flex items-center justify-between mb-4">
+                <TabsList>
+                  <TabsTrigger value="published">
+                    Опубликовано ({publishedCount})
+                  </TabsTrigger>
+                  <TabsTrigger value="archived">
+                    Архив ({archivedCount})
+                  </TabsTrigger>
+                </TabsList>
 
-            {filteredProducts.length === 0 ? (
-              <div className="py-12 text-center text-muted-foreground">
-                {searchQuery ? "Товары не найдены" : "Нет товаров"}
+                <div className="relative w-full max-w-sm ml-4">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    placeholder="Поиск по названию или артикулу..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-9"
+                    data-testid="input-search-products"
+                  />
+                </div>
               </div>
-            ) : (
-              <div className="rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Название</TableHead>
-                      <TableHead>Артикул</TableHead>
-                      <TableHead>Категория</TableHead>
-                      <TableHead>Цена</TableHead>
-                      <TableHead>Наличие</TableHead>
-                      <TableHead>Статус</TableHead>
-                      <TableHead className="w-[70px]"></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredProducts.map((product) => (
-                      <TableRow key={product.id}>
-                        <TableCell className="font-medium">{product.name}</TableCell>
-                        <TableCell>{product.sku || "—"}</TableCell>
-                        <TableCell>—</TableCell>
-                        <TableCell>{parseFloat(product.price).toLocaleString()} ₽</TableCell>
-                        <TableCell>
-                          {product.stockQuantity > 0 ? (
-                            <Badge variant="default">{product.stockQuantity} шт</Badge>
-                          ) : (
-                            <Badge variant="destructive">Нет</Badge>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={!product.isArchived ? "default" : "secondary"}>
-                            {!product.isArchived ? "Опубликован" : "Архив"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon">
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => handleViewProduct(product.id)}>
-                                <Eye className="mr-2 h-4 w-4" />
-                                Просмотр
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleEditProduct(product)}>
-                                <Pencil className="mr-2 h-4 w-4" />
-                                Редактировать
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                className="text-destructive"
-                                onClick={() => handleDeleteProduct(product.id)}
-                              >
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                Удалить
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
+
+              <TabsContent value={activeTab} className="mt-0">
+                {filteredProducts.length === 0 ? (
+                  <div className="py-12 text-center text-muted-foreground">
+                    {searchQuery ? "Товары не найдены" : `Нет товаров в ${activeTab === "published" ? "опубликованных" : "архиве"}`}
+                  </div>
+                ) : (
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-16">Фото</TableHead>
+                          <TableHead>Название</TableHead>
+                          <TableHead>Артикул</TableHead>
+                          <TableHead>Категория</TableHead>
+                          <TableHead>Цена</TableHead>
+                          <TableHead>Наличие</TableHead>
+                          <TableHead className="w-[70px]"></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredProducts.map((product) => (
+                          <TableRow key={product.id}>
+                            <TableCell>
+                              <LazyProductImage product={product} />
+                            </TableCell>
+                            <TableCell className="font-medium">{product.name}</TableCell>
+                            <TableCell>{product.sku || "—"}</TableCell>
+                            <TableCell>
+                              {product.categoryId && categoryMap[product.categoryId] 
+                                ? categoryMap[product.categoryId] 
+                                : "—"}
+                            </TableCell>
+                            <TableCell>{parseFloat(product.price).toLocaleString()} ₽</TableCell>
+                            <TableCell>
+                              {product.stockQuantity > 0 ? (
+                                <Badge variant="default">{product.stockQuantity} шт</Badge>
+                              ) : (
+                                <Badge variant="destructive">Нет</Badge>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon">
+                                    <MoreHorizontal className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem onClick={() => handleViewProduct(product.id)}>
+                                    <Eye className="mr-2 h-4 w-4" />
+                                    Просмотр
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => handleEditProduct(product)}>
+                                    <Pencil className="mr-2 h-4 w-4" />
+                                    Редактировать
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    className="text-destructive"
+                                    onClick={() => handleDeleteProduct(product.id)}
+                                  >
+                                    <Trash2 className="mr-2 h-4 w-4" />
+                                    Удалить
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </TabsContent>
+            </Tabs>
           </CardContent>
         </Card>
       </div>

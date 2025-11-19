@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/select"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
 import { useCreateProduct, useUpdateProduct, useUploadProductImages, useProduct, useDeleteProductImage } from "@/hooks/useProducts"
 import { useCategories } from "@/hooks/useCategories"
@@ -71,6 +72,15 @@ interface ProductFormDialogProps {
   product?: Product | null
 }
 
+// Combined image type that handles both existing and new images
+interface CombinedImage {
+  id?: string // Existing image has id
+  url: string // URL for preview (blob URL for new, server URL for existing)
+  file?: File // New image has file
+  isNew: boolean // Flag to indicate if this is a new image
+  sortOrder: number
+}
+
 export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDialogProps) {
   const { toast } = useToast()
   const queryClient = useQueryClient()
@@ -84,9 +94,7 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
   const uploadImages = useUploadProductImages()
   const deleteImage = useDeleteProductImage()
   
-  const [selectedImages, setSelectedImages] = useState<File[]>([])
-  const [previewUrls, setPreviewUrls] = useState<string[]>([])
-  const [existingImages, setExistingImages] = useState<any[]>([])
+  const [combinedImages, setCombinedImages] = useState<CombinedImage[]>([])
   const [isSaved, setIsSaved] = useState(false)
 
   const isEditMode = !!product
@@ -99,9 +107,15 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
 
   useEffect(() => {
     if (fullProduct && (fullProduct as any).images) {
-      setExistingImages((fullProduct as any).images || [])
+      const existingImages: CombinedImage[] = ((fullProduct as any).images || []).map((img: any, index: number) => ({
+        id: img.id,
+        url: img.url,
+        isNew: false,
+        sortOrder: index,
+      }))
+      setCombinedImages(existingImages)
     } else if (!isEditMode) {
-      setExistingImages([])
+      setCombinedImages([])
     }
   }, [fullProduct, isEditMode])
 
@@ -196,11 +210,15 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
     const files = Array.from(e.target.files || [])
     if (files.length === 0) return
 
-    const newSelectedImages = [...selectedImages, ...files].slice(0, 10)
-    setSelectedImages(newSelectedImages)
+    const newImages: CombinedImage[] = files.slice(0, 10 - combinedImages.length).map((file, index) => ({
+      url: URL.createObjectURL(file),
+      file,
+      isNew: true,
+      sortOrder: combinedImages.length + index,
+    }))
 
-    const newPreviewUrls = newSelectedImages.map((file) => URL.createObjectURL(file))
-    setPreviewUrls(newPreviewUrls)
+    // Add new images to the END of the list
+    setCombinedImages(prev => [...prev, ...newImages])
   }
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
@@ -213,11 +231,15 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
     
     if (files.length === 0) return
     
-    const newSelectedImages = [...selectedImages, ...files].slice(0, 10)
-    setSelectedImages(newSelectedImages)
+    const newImages: CombinedImage[] = files.slice(0, 10 - combinedImages.length).map((file, index) => ({
+      url: URL.createObjectURL(file),
+      file,
+      isNew: true,
+      sortOrder: combinedImages.length + index,
+    }))
 
-    const newPreviewUrls = newSelectedImages.map((file) => URL.createObjectURL(file))
-    setPreviewUrls(newPreviewUrls)
+    // Add new images to the END of the list
+    setCombinedImages(prev => [...prev, ...newImages])
   }
 
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
@@ -225,57 +247,52 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
     e.stopPropagation()
   }
 
-  const handleRemoveImage = (index: number) => {
-    setSelectedImages((prev) => prev.filter((_, i) => i !== index))
-    URL.revokeObjectURL(previewUrls[index])
-    setPreviewUrls((prev) => prev.filter((_, i) => i !== index))
-  }
-
-  const handleRemoveExistingImage = async (imageId: string) => {
-    try {
-      await deleteImage.mutateAsync(imageId)
-      setExistingImages((prev) => prev.filter((img) => img.id !== imageId))
-      await refetch()
-      toast({
-        title: "Изображение удалено",
-      })
-    } catch (error: any) {
-      toast({
-        title: "Ошибка",
-        description: error.message || "Не удалось удалить изображение",
-        variant: "destructive",
-      })
+  const handleRemoveImage = async (index: number) => {
+    const image = combinedImages[index]
+    
+    if (!image.isNew && image.id) {
+      // Remove existing image from server
+      try {
+        await deleteImage.mutateAsync(image.id)
+        toast({
+          title: "Изображение удалено",
+        })
+      } catch (error: any) {
+        toast({
+          title: "Ошибка",
+          description: error.message || "Не удалось удалить изображение",
+          variant: "destructive",
+        })
+        return
+      }
+    } else if (image.url.startsWith('blob:')) {
+      // Revoke blob URL for new images
+      URL.revokeObjectURL(image.url)
     }
+    
+    setCombinedImages(prev => prev.filter((_, i) => i !== index))
   }
 
-  const moveExistingImage = (fromIndex: number, toIndex: number) => {
-    const newImages = [...existingImages]
+  const moveImage = (fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex) return
+    
+    const newImages = [...combinedImages]
     const [movedImage] = newImages.splice(fromIndex, 1)
     newImages.splice(toIndex, 0, movedImage)
-    setExistingImages(newImages)
+    
+    // Update sortOrder
+    const updatedImages = newImages.map((img, index) => ({
+      ...img,
+      sortOrder: index,
+    }))
+    
+    setCombinedImages(updatedImages)
   }
 
-  const moveSelectedImage = (fromIndex: number, toIndex: number) => {
-    const newImages = [...selectedImages]
-    const newUrls = [...previewUrls]
-    
-    const [movedImage] = newImages.splice(fromIndex, 1)
-    const [movedUrl] = newUrls.splice(fromIndex, 1)
-    
-    newImages.splice(toIndex, 0, movedImage)
-    newUrls.splice(toIndex, 0, movedUrl)
-    
-    setSelectedImages(newImages)
-    setPreviewUrls(newUrls)
-  }
-
-  const totalImagesCount = existingImages.length + selectedImages.length
-  const canAddMore = totalImagesCount < 10
+  const canAddMore = combinedImages.length < 10
 
   const onSubmit = async (data: ProductFormData) => {
     try {
-      const currentImageOrder = [...existingImages]
-      
       const formData = new FormData()
       
       formData.append("categoryId", data.categoryId)
@@ -300,8 +317,12 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
       formData.append("isNew", data.isNew.toString())
       formData.append("isArchived", (!data.isPublished).toString())
 
-      selectedImages.forEach((image, index) => {
-        formData.append(`images`, image)
+      // Extract new images (those with file property)
+      const newImagesWithFiles = combinedImages.filter(img => img.file)
+      newImagesWithFiles.forEach((img) => {
+        if (img.file) {
+          formData.append(`images`, img.file)
+        }
       })
 
       if (isEditMode && product) {
@@ -315,81 +336,84 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
             composition: data.composition,
             storageConditions: data.storageConditions,
             usageInstructions: data.usageInstructions || null,
-            contraindications: data.contraindications || null,
-            weight: data.weight || null,
-            volume: data.volume || null,
-            dimensionsHeight: data.dimensionsHeight || null,
-            dimensionsLength: data.dimensionsLength || null,
-            dimensionsWidth: data.dimensionsWidth || null,
-            shelfLifeDays: data.shelfLifeDays ? parseInt(data.shelfLifeDays) : null,
+            contraindications: data.contraindications || undefined,
+            weight: data.weight || undefined,
+            volume: data.volume || undefined,
+            dimensionsHeight: data.dimensionsHeight || undefined,
+            dimensionsLength: data.dimensionsLength || undefined,
+            dimensionsWidth: data.dimensionsWidth || undefined,
+            shelfLifeDays: data.shelfLifeDays ? parseInt(data.shelfLifeDays) : undefined,
             stockQuantity: data.stockQuantity,
             price: data.price,
-            discountPercentage: data.discountPercentage || "0",
-            discountStartDate: data.discountStartDate ? new Date(data.discountStartDate) : null,
-            discountEndDate: data.discountEndDate ? new Date(data.discountEndDate) : null,
+            discountPercentage: data.discountPercentage || undefined,
+            discountStartDate: data.discountStartDate ? new Date(data.discountStartDate) : undefined,
+            discountEndDate: data.discountEndDate ? new Date(data.discountEndDate) : undefined,
             isNew: data.isNew,
             isArchived: !data.isPublished,
           },
         })
-        
-        if (selectedImages.length > 0) {
-          const imagesFormData = new FormData()
-          selectedImages.forEach((image) => {
-            imagesFormData.append("images", image)
+
+        // Upload new images if any
+        if (newImagesWithFiles.length > 0) {
+          const imageFormData = new FormData()
+          newImagesWithFiles.forEach((img) => {
+            if (img.file) {
+              imageFormData.append('images', img.file)
+            }
           })
-          await uploadImages.mutateAsync({
-            productId: product.id,
-            images: imagesFormData,
+          await uploadImages.mutateAsync({ productId: product.id, images: imageFormData })
+        }
+
+        // Reorder all images according to their position in combinedImages
+        const imageOrders = combinedImages
+          .map((img, index) => {
+            if (img.id) {
+              return { imageId: img.id, sortOrder: index }
+            }
+            return null
           })
-          
-          const updatedProduct = await refetch()
-          const serverImages = (updatedProduct.data as any)?.images || []
-          
-          const existingImageIds = new Set(currentImageOrder.map((img: any) => img.id))
-          const newlyUploadedImages = serverImages.filter((img: any) => !existingImageIds.has(img.id))
-          
-          const finalImageOrder = [...currentImageOrder, ...newlyUploadedImages]
-          
-          if (finalImageOrder.length > 0) {
-            const imageOrders = finalImageOrder.map((img: any, index: number) => ({
-              imageId: img.id,
-              sortOrder: index,
-            }))
-            
-            await productsApi.reorderImages(product.id, imageOrders)
-          }
-        } else if (currentImageOrder.length > 0) {
-          const imageOrders = currentImageOrder.map((img: any, index: number) => ({
-            imageId: img.id,
-            sortOrder: index,
-          }))
-          
+          .filter(Boolean) as Array<{ imageId: string; sortOrder: number }>
+
+        if (imageOrders.length > 0) {
           await productsApi.reorderImages(product.id, imageOrders)
         }
-        
-        await refetch()
 
+        setIsSaved(true)
+        setTimeout(() => setIsSaved(false), 2000)
+        
+        await queryClient.invalidateQueries({ queryKey: ["adminProducts"] })
+        await queryClient.invalidateQueries({ queryKey: ["products", product.id] })
+        await refetch()
+        
         toast({
           title: "Товар обновлен",
           description: "Изменения успешно сохранены",
         })
-        
+      } else {
+        const response = await fetch("/api/products", {
+          method: "POST",
+          body: formData,
+        })
+
+        if (!response.ok) {
+          const error = await response.json()
+          throw new Error(error.message || "Ошибка создания товара")
+        }
+
+        const newProduct = await response.json()
+
         setIsSaved(true)
         setTimeout(() => setIsSaved(false), 2000)
-      } else {
-        await createProduct.mutateAsync(formData)
+
+        await queryClient.invalidateQueries({ queryKey: ["adminProducts"] })
         
         toast({
           title: "Товар создан",
-          description: "Новый товар добавлен в каталог",
+          description: "Товар успешно добавлен в каталог",
         })
-        
-        setIsSaved(true)
-        setTimeout(() => setIsSaved(false), 2000)
-      }
 
-      setSelectedImages([])
-      setPreviewUrls([])
+        onOpenChange(false)
+      }
     } catch (error: any) {
       toast({
         title: "Ошибка",
@@ -401,28 +425,28 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isEditMode ? "Редактировать товар" : "Добавить товар"}</DialogTitle>
           <DialogDescription>
             {isEditMode
-              ? "Измените информацию о товаре"
+              ? "Внесите изменения в товар и нажмите сохранить"
               : "Заполните информацию о новом товаре"}
           </DialogDescription>
         </DialogHeader>
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-            <Tabs defaultValue="main" className="w-full">
+            <Tabs defaultValue="general" className="w-full">
               <TabsList className="grid w-full grid-cols-4">
-                <TabsTrigger value="main">Основное</TabsTrigger>
+                <TabsTrigger value="general">Общее</TabsTrigger>
                 <TabsTrigger value="characteristics">Характеристики</TabsTrigger>
-                <TabsTrigger value="price">Цена и остатки</TabsTrigger>
+                <TabsTrigger value="pricing">Цена</TabsTrigger>
                 <TabsTrigger value="images">Изображения</TabsTrigger>
               </TabsList>
 
-              {/* Main Tab */}
-              <TabsContent value="main" className="space-y-4 mt-4">
+              {/* General Tab */}
+              <TabsContent value="general" className="space-y-4 mt-4">
                 <FormField
                   control={form.control}
                   name="categoryId"
@@ -451,12 +475,12 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
                 <div className="grid grid-cols-2 gap-4">
                   <FormField
                     control={form.control}
-                    name="name"
+                    name="sku"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Название *</FormLabel>
+                        <FormLabel>Артикул *</FormLabel>
                         <FormControl>
-                          <Input placeholder="Мёд цветочный" {...field} />
+                          <Input placeholder="ABC-123" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -465,12 +489,12 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
 
                   <FormField
                     control={form.control}
-                    name="sku"
+                    name="name"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Артикул *</FormLabel>
+                        <FormLabel>Название *</FormLabel>
                         <FormControl>
-                          <Input placeholder="HONEY-001" {...field} />
+                          <Input placeholder="Название товара" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -486,8 +510,8 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
                       <FormLabel>Описание *</FormLabel>
                       <FormControl>
                         <Textarea
-                          placeholder="Подробное описание товара"
-                          className="min-h-[100px]"
+                          placeholder="Подробное описание товара..."
+                          className="min-h-[120px]"
                           {...field}
                         />
                       </FormControl>
@@ -503,13 +527,16 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
                     <FormItem>
                       <FormLabel>Состав *</FormLabel>
                       <FormControl>
-                        <Textarea placeholder="100% натуральный мёд" {...field} />
+                        <Textarea placeholder="Состав продукта..." {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
+              </TabsContent>
 
+              {/* Characteristics Tab */}
+              <TabsContent value="characteristics" className="space-y-4 mt-4">
                 <FormField
                   control={form.control}
                   name="storageConditions"
@@ -518,7 +545,7 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
                       <FormLabel>Условия хранения *</FormLabel>
                       <FormControl>
                         <Textarea
-                          placeholder="Хранить при температуре от +5 до +20°C"
+                          placeholder="Хранить в сухом месте при температуре..."
                           {...field}
                         />
                       </FormControl>
@@ -532,9 +559,9 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
                   name="usageInstructions"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Способ применения</FormLabel>
+                      <FormLabel>Инструкция по применению</FormLabel>
                       <FormControl>
-                        <Textarea placeholder="Принимать по 1 ч.л. в день" {...field} />
+                        <Textarea placeholder="Принимать по..." {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -548,20 +575,14 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
                     <FormItem>
                       <FormLabel>Противопоказания</FormLabel>
                       <FormControl>
-                        <Textarea
-                          placeholder="Индивидуальная непереносимость"
-                          {...field}
-                        />
+                        <Textarea placeholder="Индивидуальная непереносимость..." {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-              </TabsContent>
 
-              {/* Characteristics Tab */}
-              <TabsContent value="characteristics" className="space-y-4 mt-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-3 gap-4">
                   <FormField
                     control={form.control}
                     name="weight"
@@ -569,7 +590,7 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
                       <FormItem>
                         <FormLabel>Вес (г)</FormLabel>
                         <FormControl>
-                          <Input type="number" placeholder="500" {...field} />
+                          <Input type="text" placeholder="500" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -583,7 +604,21 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
                       <FormItem>
                         <FormLabel>Объем (мл)</FormLabel>
                         <FormControl>
-                          <Input type="number" placeholder="500" {...field} />
+                          <Input type="text" placeholder="250" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="shelfLifeDays"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Срок годности (дни)</FormLabel>
+                        <FormControl>
+                          <Input type="text" placeholder="365" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -594,26 +629,12 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
                 <div className="grid grid-cols-3 gap-4">
                   <FormField
                     control={form.control}
-                    name="dimensionsHeight"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Высота (см)</FormLabel>
-                        <FormControl>
-                          <Input type="number" step="0.1" placeholder="10" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
                     name="dimensionsLength"
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Длина (см)</FormLabel>
                         <FormControl>
-                          <Input type="number" step="0.1" placeholder="15" {...field} />
+                          <Input type="text" placeholder="10" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -627,32 +648,31 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
                       <FormItem>
                         <FormLabel>Ширина (см)</FormLabel>
                         <FormControl>
-                          <Input type="number" step="0.1" placeholder="8" {...field} />
+                          <Input type="text" placeholder="5" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="dimensionsHeight"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Высота (см)</FormLabel>
+                        <FormControl>
+                          <Input type="text" placeholder="15" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
                 </div>
-
-                <FormField
-                  control={form.control}
-                  name="shelfLifeDays"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Срок годности (дней)</FormLabel>
-                      <FormControl>
-                        <Input type="number" placeholder="365" {...field} />
-                      </FormControl>
-                      <FormDescription>Например: 365 дней = 1 год</FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
               </TabsContent>
 
-              {/* Price Tab */}
-              <TabsContent value="price" className="space-y-4 mt-4">
+              {/* Pricing Tab */}
+              <TabsContent value="pricing" className="space-y-4 mt-4">
                 <div className="grid grid-cols-2 gap-4">
                   <FormField
                     control={form.control}
@@ -661,7 +681,7 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
                       <FormItem>
                         <FormLabel>Цена (₽) *</FormLabel>
                         <FormControl>
-                          <Input type="number" step="0.01" placeholder="1200.00" {...field} />
+                          <Input type="text" placeholder="1000" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -788,19 +808,19 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
                 </div>
                 
                 <div className="space-y-4">
-                  {isEditMode && existingImages.length > 0 && (
+                  {/* Combined images grid */}
+                  {combinedImages.length > 0 && (
                     <div>
-                      <h4 className="text-sm font-semibold mb-3">Текущие изображения ({existingImages.length})</h4>
+                      <h4 className="text-sm font-semibold mb-3">Изображения ({combinedImages.length}/10)</h4>
                       <div className="grid grid-cols-5 gap-3">
-                        {existingImages.map((image: any, index: number) => (
+                        {combinedImages.map((image, index) => (
                           <div 
-                            key={image.id} 
+                            key={image.id || image.url} 
                             className="relative group cursor-move"
                             draggable
                             onDragStart={(e) => {
                               e.dataTransfer.effectAllowed = "move"
                               e.dataTransfer.setData("text/plain", index.toString())
-                              e.dataTransfer.setData("type", "existing")
                             }}
                             onDragOver={(e) => {
                               e.preventDefault()
@@ -809,28 +829,35 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
                             onDrop={(e) => {
                               e.preventDefault()
                               const fromIndex = parseInt(e.dataTransfer.getData("text/plain"))
-                              const type = e.dataTransfer.getData("type")
-                              if (type === "existing" && fromIndex !== index) {
-                                moveExistingImage(fromIndex, index)
+                              if (fromIndex !== index) {
+                                moveImage(fromIndex, index)
                               }
                             }}
                           >
                             <div className="aspect-[3/4] w-full">
                               <img
                                 src={image.url}
-                                alt={`Текущее ${index + 1}`}
-                                className="w-full h-full object-cover rounded-lg border"
+                                alt={`Изображение ${index + 1}`}
+                                className={`w-full h-full object-cover rounded-lg border ${
+                                  image.isNew ? 'border-primary border-2' : ''
+                                }`}
                               />
                             </div>
                             <button
                               type="button"
-                              onClick={() => handleRemoveExistingImage(image.id)}
+                              onClick={() => handleRemoveImage(index)}
                               className="absolute top-2 right-2 p-1 bg-destructive text-destructive-foreground rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
                             >
                               <X className="h-4 w-4" />
                             </button>
-                            <div className="absolute bottom-2 left-2 bg-black/50 text-white text-xs px-2 py-1 rounded">
-                              {index === 0 ? "Главное" : index + 1}
+                            <div className="absolute bottom-2 left-2">
+                              {image.isNew ? (
+                                <Badge variant="default" className="text-xs">Новый</Badge>
+                              ) : (
+                                <div className="bg-black/50 text-white text-xs px-2 py-1 rounded">
+                                  {index === 0 ? "Главное" : index + 1}
+                                </div>
+                              )}
                             </div>
                           </div>
                         ))}
@@ -838,6 +865,7 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
                     </div>
                   )}
 
+                  {/* Upload area */}
                   <div 
                     className="border-2 border-dashed border-muted-foreground/25 rounded-lg hover:border-muted-foreground/50 transition-colors w-full min-h-[200px]"
                     onDrop={handleDrop}
@@ -861,64 +889,14 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
                       <Upload className="h-12 w-12 text-muted-foreground mb-4" />
                       <p className="text-sm text-muted-foreground text-center">
                         {!canAddMore
-                          ? `Максимум 10 изображений (уже ${totalImagesCount})`
+                          ? `Максимум 10 изображений (уже ${combinedImages.length})`
                           : `Нажмите или перетащите изображения сюда`}
                       </p>
                       <p className="text-xs text-muted-foreground/75 mt-2">
-                        ({totalImagesCount}/10)
+                        ({combinedImages.length}/10)
                       </p>
                     </label>
                   </div>
-
-                  {selectedImages.length > 0 && (
-                    <div>
-                      <h4 className="text-sm font-semibold mb-3">Новые изображения ({selectedImages.length})</h4>
-                      <div className="grid grid-cols-5 gap-3">
-                        {previewUrls.map((url, index) => (
-                          <div 
-                            key={index} 
-                            className="relative group cursor-move"
-                            draggable
-                            onDragStart={(e) => {
-                              e.dataTransfer.effectAllowed = "move"
-                              e.dataTransfer.setData("text/plain", index.toString())
-                              e.dataTransfer.setData("type", "selected")
-                            }}
-                            onDragOver={(e) => {
-                              e.preventDefault()
-                              e.dataTransfer.dropEffect = "move"
-                            }}
-                            onDrop={(e) => {
-                              e.preventDefault()
-                              const fromIndex = parseInt(e.dataTransfer.getData("text/plain"))
-                              const type = e.dataTransfer.getData("type")
-                              if (type === "selected" && fromIndex !== index) {
-                                moveSelectedImage(fromIndex, index)
-                              }
-                            }}
-                          >
-                            <div className="aspect-[3/4] w-full">
-                              <img
-                                src={url}
-                                alt={`Новое ${index + 1}`}
-                                className="w-full h-full object-cover rounded-lg border border-primary"
-                              />
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveImage(index)}
-                              className="absolute top-2 right-2 p-1 bg-destructive text-destructive-foreground rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-                            >
-                              <X className="h-4 w-4" />
-                            </button>
-                            <div className="absolute bottom-2 left-2 bg-primary text-primary-foreground text-xs px-2 py-1 rounded">
-                              Новое {index + 1}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </div>
               </TabsContent>
             </Tabs>
