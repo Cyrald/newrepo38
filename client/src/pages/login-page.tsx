@@ -16,9 +16,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Checkbox } from "@/components/ui/checkbox"
 import { useToast } from "@/hooks/use-toast"
 import { useLogin } from "@/hooks/useAuth"
+import { usePrefetchFromReturnUrl } from "@/hooks/usePrefetchRoutes"
 import heroImage from "@assets/generated_images/Hero_section_background_image_b0dcdc6c.png"
 
 export default function LoginPage() {
+  usePrefetchFromReturnUrl()
+  
   const [, setLocation] = useLocation()
   const searchParams = useSearch()
   const { toast } = useToast()

@@ -16,9 +16,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Checkbox } from "@/components/ui/checkbox"
 import { useToast } from "@/hooks/use-toast"
 import { useRegister } from "@/hooks/useAuth"
+import { usePrefetchFromReturnUrl } from "@/hooks/usePrefetchRoutes"
 import heroImage from "@assets/generated_images/Hero_section_background_image_b0dcdc6c.png"
 
 export default function RegisterPage() {
+  usePrefetchFromReturnUrl()
+  
   const [, setLocation] = useLocation()
   const { toast } = useToast()
   const registerMutation = useRegister()
@@ -236,9 +239,9 @@ export default function RegisterPage() {
               <p className="text-muted-foreground">
                 Уже есть аккаунт?{" "}
                 <Link href="/login">
-                  <Button variant="link" className="p-0" data-testid="link-login">
+                  <span className="text-primary hover:underline cursor-pointer font-medium" data-testid="link-login">
                     Войти
-                  </Button>
+                  </span>
                 </Link>
               </p>
             </div>

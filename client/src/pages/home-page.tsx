@@ -14,8 +14,11 @@ import { useCategories } from "@/hooks/useCategories"
 import { useProducts } from "@/hooks/useProducts"
 import { useWishlist } from "@/hooks/useWishlist"
 import { useAuthStore } from "@/stores/authStore"
+import { usePrefetchRoutes } from "@/hooks/usePrefetchRoutes"
 
 export default function HomePage() {
+  usePrefetchRoutes()
+  
   const { data: categories, isLoading: categoriesLoading } = useCategories()
   const { data: newProductsData, isLoading: productsLoading } = useProducts({
     sortBy: "newest",
