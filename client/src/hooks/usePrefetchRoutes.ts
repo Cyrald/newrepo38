@@ -36,7 +36,31 @@ const routeComponentMap: Record<string, () => Promise<any>> = {
   '/admin/support': () => import('@/pages/admin/support-chat-page'),
 };
 
-function prefetchRoute(route: string): void {
+type NetworkSpeed = 'slow' | 'medium' | 'fast';
+
+function getNetworkSpeed(): NetworkSpeed {
+  const connection = (navigator as any).connection || (navigator as any).mozConnection || (navigator as any).webkitConnection;
+  
+  if (!connection) return 'medium';
+  
+  if (connection.saveData) return 'slow';
+  
+  const effectiveType = connection.effectiveType;
+  if (effectiveType === 'slow-2g' || effectiveType === '2g') return 'slow';
+  if (effectiveType === '3g') return 'medium';
+  
+  return 'fast';
+}
+
+function getConcurrency(networkSpeed: NetworkSpeed): number {
+  switch (networkSpeed) {
+    case 'slow': return 1;
+    case 'medium': return 2;
+    case 'fast': return 3;
+  }
+}
+
+async function prefetchRoute(route: string): Promise<void> {
   if (prefetchedRoutes.has(route)) {
     return;
   }
@@ -47,31 +71,101 @@ function prefetchRoute(route: string): void {
     return;
   }
 
-  loader()
-    .then(() => {
-      prefetchedRoutes.add(route);
-      console.log(`✅ Prefetched: ${route}`);
-    })
-    .catch((error) => {
-      console.error(`❌ Failed to prefetch ${route}:`, error);
-    });
+  try {
+    await loader();
+    prefetchedRoutes.add(route);
+    console.log(`✅ Prefetched: ${route}`);
+  } catch (error) {
+    console.error(`❌ Failed to prefetch ${route}:`, error);
+  }
 }
 
-// Helper function to get accessible routes based on auth status and roles
-function getAccessibleRoutes(isAuthenticated: boolean, hasStaffRole: boolean): string[] {
-  const publicRoutes = ['/login', '/register', '/privacy-policy'];
-  const authenticatedRoutes = ['/catalog', '/cart', '/wishlist', '/products', '/profile', '/checkout'];
-  const adminRoutes = ['/admin', '/admin/products', '/admin/categories', '/admin/orders', '/admin/promocodes', '/admin/users', '/admin/support'];
-  
+async function prefetchBatch(routes: string[], concurrency: number): Promise<void> {
+  const queue = [...routes];
+  const active: Promise<void>[] = [];
+
+  while (queue.length > 0 || active.length > 0) {
+    while (active.length < concurrency && queue.length > 0) {
+      const route = queue.shift()!;
+      const promise = prefetchRoute(route).then(() => {
+        const index = active.indexOf(promise);
+        if (index > -1) active.splice(index, 1);
+      });
+      active.push(promise);
+    }
+    
+    if (active.length > 0) {
+      await Promise.race(active);
+    }
+  }
+}
+
+type PriorityTier = {
+  name: string;
+  routes: string[];
+  delay?: number;
+};
+
+function getPrioritizedRoutes(isAuthenticated: boolean, hasStaffRole: boolean): PriorityTier[] {
+  const tiers: PriorityTier[] = [];
+
   if (!isAuthenticated) {
-    return [...publicRoutes, '/catalog', '/products'];
+    tiers.push({
+      name: 'Tier 1: Auth pages',
+      routes: ['/login', '/register'],
+      delay: 0,
+    });
+    
+    tiers.push({
+      name: 'Tier 2: Public pages',
+      routes: ['/catalog', '/products'],
+      delay: 500,
+    });
+    
+    tiers.push({
+      name: 'Tier 3: Secondary',
+      routes: ['/privacy-policy'],
+      delay: 2000,
+    });
+  } else {
+    tiers.push({
+      name: 'Tier 1: Core pages',
+      routes: ['/catalog', '/products'],
+      delay: 0,
+    });
+    
+    tiers.push({
+      name: 'Tier 2: User features',
+      routes: ['/cart', '/wishlist', '/profile'],
+      delay: 800,
+    });
+    
+    tiers.push({
+      name: 'Tier 3: Secondary',
+      routes: ['/checkout', '/privacy-policy'],
+      delay: 2000,
+    });
+    
+    if (hasStaffRole) {
+      const adminRoutes = [
+        '/admin',
+        '/admin/products',
+        '/admin/categories',
+        '/admin/orders',
+        '/admin/promocodes',
+        '/admin/users',
+        '/admin/support'
+      ];
+      
+      tiers.push({
+        name: 'Admin: All panels',
+        routes: adminRoutes,
+        delay: 1500,
+      });
+    }
   }
-  
-  if (hasStaffRole) {
-    return [...authenticatedRoutes, ...adminRoutes, '/privacy-policy'];
-  }
-  
-  return [...authenticatedRoutes, '/privacy-policy'];
+
+  return tiers;
 }
 
 export function usePrefetchRoutes() {
@@ -79,11 +173,11 @@ export function usePrefetchRoutes() {
   const authInitialized = useAuthStore((state) => state.authInitialized);
   const user = useAuthStore((state) => state.user);
   const previousAuthState = useRef<boolean | null>(null);
+  const previousStaffState = useRef<boolean | null>(null);
   const [location] = useLocation();
-  const prefetchStarted = useRef(false);
 
   useEffect(() => {
-    if (!authInitialized || prefetchStarted.current) {
+    if (!authInitialized) {
       return;
     }
 
@@ -91,43 +185,42 @@ export function usePrefetchRoutes() {
       ['admin', 'marketer', 'consultant'].includes(role)
     ) ?? false;
     
-    // Get all accessible routes based on auth status
-    const accessibleRoutes = getAccessibleRoutes(isAuthenticated, hasStaffRole);
+    const authChanged = previousAuthState.current !== isAuthenticated;
+    const staffChanged = previousStaffState.current !== hasStaffRole;
     
-    // Filter out already prefetched routes
-    const routesToPrefetch = accessibleRoutes.filter(route => !prefetchedRoutes.has(route));
-    
-    if (routesToPrefetch.length === 0) {
+    if (!authChanged && !staffChanged) {
       return;
     }
 
-    // AGGRESSIVE PREFETCHING: Load everything in parallel immediately
-    console.log(`🚀 Starting aggressive prefetch of ${routesToPrefetch.length} routes...`);
-    prefetchStarted.current = true;
+    const networkSpeed = getNetworkSpeed();
+    const concurrency = getConcurrency(networkSpeed);
     
-    // Use queueMicrotask to avoid blocking render
-    queueMicrotask(() => {
-      const loaders = routesToPrefetch.map(route => {
-        const loader = routeComponentMap[route];
-        if (!loader) return Promise.resolve();
-        
-        return loader()
-          .then(() => {
-            prefetchedRoutes.add(route);
-            console.log(`✅ Prefetched: ${route}`);
-          })
-          .catch((error) => {
-            console.error(`❌ Failed to prefetch ${route}:`, error);
-          });
-      });
+    if (networkSpeed === 'slow') {
+      console.log('⚠️ Slow network detected - minimal prefetching');
+    }
+
+    const priorityTiers = getPrioritizedRoutes(isAuthenticated, hasStaffRole);
+    
+    const totalRoutes = priorityTiers.reduce((sum, tier) => sum + tier.routes.length, 0);
+    console.log(`🎯 Smart prefetch started: ${totalRoutes} routes in ${priorityTiers.length} tiers (${concurrency} parallel streams)`);
+
+    priorityTiers.forEach((tier) => {
+      const routesToLoad = tier.routes.filter(route => !prefetchedRoutes.has(route));
       
-      // Load all routes in parallel
-      Promise.allSettled(loaders).then(() => {
-        console.log(`🎉 Aggressive prefetch complete! Loaded ${routesToPrefetch.length} routes.`);
-      });
+      if (routesToLoad.length === 0) return;
+
+      safeRequestIdleCallback(() => {
+        setTimeout(() => {
+          console.log(`📦 ${tier.name}: Loading ${routesToLoad.length} routes...`);
+          prefetchBatch(routesToLoad, concurrency).then(() => {
+            console.log(`✅ ${tier.name}: Complete`);
+          });
+        }, tier.delay || 0);
+      }, { timeout: 2000 });
     });
 
     previousAuthState.current = isAuthenticated;
+    previousStaffState.current = hasStaffRole;
   }, [isAuthenticated, authInitialized, user, location]);
 }
 
