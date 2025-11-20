@@ -12,8 +12,8 @@ export function useLogin() {
     mutationFn: (data: LoginInput) => authApi.login(data),
     onSuccess: (response) => {
       login(response.user);
-      queryClient.invalidateQueries({ queryKey: ["cart"] });
-      queryClient.invalidateQueries({ queryKey: ["wishlist"] });
+      queryClient.refetchQueries({ queryKey: ["cart"] });
+      queryClient.refetchQueries({ queryKey: ["wishlist"] });
     },
   });
 }

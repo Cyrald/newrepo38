@@ -154,28 +154,9 @@ export function ProductCard({ product, onAddToCart, onToggleWishlist, isInWishli
         <div className="mt-auto">
           {product.stockQuantity > 0 ? (
             cartQuantity > 0 ? (
-              <div className="flex flex-col gap-1.5">
-                <Button
-                  className="w-full h-8 text-xs bg-secondary/80 hover:bg-secondary text-secondary-foreground"
-                  size="sm"
-                  variant="secondary"
-                  disabled
-                  data-testid={`button-in-cart-${product.id}`}
-                >
-                  <ShoppingCart className="mr-1.5 h-3.5 w-3.5" />
-                  В корзине
-                </Button>
-                <Input
-                  type="text"
-                  min="1"
-                  max={product.stockQuantity}
-                  value={localQuantity || cartQuantity}
-                  onChange={handleQuantityChange}
-                  onBlur={handleQuantityBlur}
-                  onClick={(e) => e.stopPropagation()}
-                  className="w-full h-8 text-xs text-center"
-                  data-testid={`input-quantity-${product.id}`}
-                />
+              <div className="flex items-center justify-center h-8 text-sm font-medium text-muted-foreground" data-testid={`text-in-cart-${product.id}`}>
+                <ShoppingCart className="mr-1.5 h-4 w-4" />
+                В корзине: {cartQuantity} из {product.stockQuantity}
               </div>
             ) : (
               <Button

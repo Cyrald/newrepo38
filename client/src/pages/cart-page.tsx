@@ -128,14 +128,15 @@ export default function CartPage() {
                               type="text"
                               value={item.quantity}
                               onChange={(e) => {
-                                const val = e.target.value;
-                                if (val === "" || /^\d+$/.test(val)) {
-                                  e.target.value = val;
-                                }
+                                // Allow typing but don't update cart yet
                               }}
                               onBlur={(e) => {
-                                const num = parseInt(e.target.value) || 1;
-                                handleUpdateQuantity(item.product.id, Math.max(1, num));
+                                const num = parseInt(e.target.value);
+                                if (!isNaN(num) && num > 0) {
+                                  handleUpdateQuantity(item.product.id, num);
+                                } else {
+                                  e.target.value = String(item.quantity);
+                                }
                               }}
                               className="h-8 w-16 text-center"
                               data-testid={`input-quantity-${item.id}`}

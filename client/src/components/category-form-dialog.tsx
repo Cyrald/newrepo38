@@ -231,11 +231,16 @@ export function CategoryFormDialog({ open, onOpenChange, category }: CategoryFor
                         type="text"
                         placeholder="0"
                         {...field}
-                        value={field.value || ""}
+                        value={field.value ?? ""}
                         onChange={(e) => field.onChange(e.target.value)}
                         onBlur={(e) => {
-                          const num = parseInt(e.target.value) || 0;
-                          field.onChange(num);
+                          const val = e.target.value;
+                          if (val === "") {
+                            field.onChange(0);
+                          } else {
+                            const num = parseInt(val);
+                            field.onChange(isNaN(num) ? 0 : num);
+                          }
                         }}
                       />
                     </FormControl>

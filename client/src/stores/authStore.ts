@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { User } from "@shared/schema";
 import { authApi } from "@/lib/api";
+import { useCartStore } from "./cartStore";
 
 interface AuthState {
   user: User | null;
@@ -33,6 +34,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
     } catch (error) {
       console.error('Logout error:', error);
     } finally {
+      useCartStore.getState().clear();
       set({
         user: null,
         isAuthenticated: false,
