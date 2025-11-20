@@ -134,8 +134,10 @@ export default function AdminSupportChatPage() {
         ["/api/support/messages", { userId: selectedUserId }],
         (old) => {
           if (!old) return [data]
-          // Replace temp message with real one
-          return old.filter(m => !m.id.startsWith('temp-')).concat(data)
+          // Remove temp messages and check for duplicates
+          const withoutTemp = old.filter(m => !m.id.startsWith('temp-'))
+          if (withoutTemp.some(m => m.id === data.id)) return withoutTemp
+          return [...withoutTemp, data]
         }
       )
       // Update conversations list
@@ -388,22 +390,22 @@ export default function AdminSupportChatPage() {
 
                 {/* Input */}
                 <div className="p-4 border-t bg-muted/20">
-                  <div className="flex gap-3">
+                  <div className="flex gap-3 items-end">
                     <Textarea
                       placeholder="Введите ответ..."
                       value={message}
                       onChange={(e) => setMessage(e.target.value)}
                       onKeyDown={handleKeyPress}
-                      rows={2}
-                      className="resize-none flex-1 bg-background"
+                      rows={1}
+                      className="resize-none flex-1 bg-background min-h-[2.5rem]"
                     />
                     <Button
                       onClick={handleSendMessage}
                       disabled={!message.trim() || sendMessageMutation.isPending}
                       size="icon"
-                      className="h-auto px-4"
+                      className="h-10 w-10 shrink-0"
                     >
-                      <Send className="h-5 w-5" />
+                      <Send className="h-4 w-4" />
                     </Button>
                   </div>
                   <p className="text-xs text-muted-foreground mt-2 px-1">

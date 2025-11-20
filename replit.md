@@ -87,23 +87,31 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
-### 2024-11-20: Support Chat Widget & Critical Bug Fixes
+### 2024-11-20: Support Chat Widget - Full Implementation & Fixes
 
-**Support Chat Widget Enabled:**
-- Chat widget is now active and visible for authenticated regular users (customer role)
-- Widget positioned in bottom-left corner with reduced button size (h-7 w-7)
-- Staff users (admin, marketer, consultant) do not see the widget
+**Chat Widget Configuration:**
+- ✅ Button size increased 1.5x: `h-11 w-11` (was h-7 w-7)
+- ✅ Widget positioned bottom-left with `position: fixed` (stays in place when scrolling)
+- ✅ Widget size reduced by 40%: width 252px, height 390px (was 420px × 650px)
+- ✅ Only visible for authenticated customer role users (hidden from staff)
 
 **Critical Bug Fixes:**
-- **Fixed white screen crash**: apiRequest now properly returns parsed JSON instead of raw Response objects
-- **Fixed TypeScript errors**: Added proper generic types to useMutation contexts
-- **Added ErrorBoundary**: Prevents full application crashes when component errors occur
-- **Fixed mutation types**: All support chat mutations now have proper context typing
+- ✅ **Fixed white screen crash**: apiRequest now returns parsed JSON instead of raw Response objects
+- ✅ **Fixed duplicate messages**: Improved optimistic updates to prevent message duplication
+- ✅ **Fixed real-time updates**: Admin panel now receives WebSocket notifications when customers send messages
+- ✅ **Fixed TypeScript errors**: Added proper generic types to all mutation contexts
+- ✅ **Added ErrorBoundary**: Prevents full application crashes when component errors occur
 
-**Technical Details:**
+**Admin Panel Improvements:**
+- ✅ Textarea height reduced by 50%: `rows={1}` (was rows={2})
+- ✅ Send button size reduced by 50%: `h-10 w-10` (was h-auto with larger size)
+- ✅ Real-time message delivery to all connected admins and consultants
+
+**Technical Implementation:**
 - Modified `apiRequest<T>()` in queryClient.ts to parse JSON responses
-- Updated support chat mutations in both user widget and admin panel
-- Added ErrorBoundary component wrapping Router and SupportChatLauncher
+- Enhanced WebSocket broadcast logic to notify all staff members
+- Updated connectedUsers Map to track user roles alongside connections
+- Improved mutation onSuccess handlers to prevent duplicate message rendering
 - All LSP diagnostics resolved
 
 ## External Dependencies

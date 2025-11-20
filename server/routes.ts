@@ -37,8 +37,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
   const wss = new WebSocketServer({ server: httpServer, path: "/ws" });
 
-  // Map to track connected users: userId -> WebSocket connection
-  const connectedUsers = new Map<string, any>();
+  // Map to track connected users: userId -> { ws: WebSocket, roles: string[] }
+  const connectedUsers = new Map<string, { ws: any, roles: string[] }>();
 
   wss.on("connection", async (ws: any, req: any) => {
     let userId: string | null = null;
@@ -56,7 +56,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const authUserId = message.userId as string;
           userId = authUserId;
           authenticated = true;
-          connectedUsers.set(authUserId, ws);
+          
+          // Get user roles
+          const userRoleRecords = await storage.getUserRoles(authUserId);
+          const userRoles = userRoleRecords.map(r => r.role);
+          connectedUsers.set(authUserId, { ws, roles: userRoles });
           
           ws.send(JSON.stringify({
             type: "auth_success",
@@ -1338,23 +1342,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         messageText: req.body.messageText,
       });
       
-      // Broadcast only to conversation participants (customer + sender)
+      // Broadcast to conversation participants and all staff
       const notification = {
         type: "new_message",
         message: message,
       };
       
-      // Send to customer
-      const customerWs = connectedUsers.get(userId);
-      if (customerWs && customerWs.readyState === WebSocket.OPEN) {
-        customerWs.send(JSON.stringify(notification));
+      // Send to customer (conversation owner)
+      const customerConnection = connectedUsers.get(userId);
+      if (customerConnection?.ws && customerConnection.ws.readyState === WebSocket.OPEN) {
+        customerConnection.ws.send(JSON.stringify(notification));
       }
       
-      // Send to sender (if different from customer)
-      if (req.userId !== userId) {
-        const senderWs = connectedUsers.get(req.userId!);
-        if (senderWs && senderWs.readyState === WebSocket.OPEN) {
-          senderWs.send(JSON.stringify(notification));
+      // Send to all connected admins and consultants
+      for (const [connUserId, connection] of Array.from(connectedUsers.entries())) {
+        // Skip if already sent to customer
+        if (connUserId === userId) continue;
+        
+        // Send to staff members (admin, consultant)
+        const isStaff = connection.roles.some((role: string) => ['admin', 'consultant'].includes(role));
+        if (isStaff && connection.ws.readyState === WebSocket.OPEN) {
+          connection.ws.send(JSON.stringify(notification));
         }
       }
       
