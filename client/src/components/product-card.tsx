@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { Link } from "wouter"
-import { ShoppingCart, Heart, Eye } from "lucide-react"
+import { ShoppingCart, Heart, Eye, Plus, Minus } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -25,6 +25,7 @@ export function ProductCard({ product, onAddToCart, onToggleWishlist, isInWishli
   const cartItems = useCartStore((state) => state.items)
   const cartQuantity = cartItems.find(item => item.productId === product.id)?.quantity || 0
   const updateCartItem = useUpdateCartItem()
+  const displayQuantity = localQuantity === "" ? String(cartQuantity) : localQuantity
   const hasDiscount = parseFloat(product.discountPercentage) > 0
   const discountedPrice = hasDiscount
     ? parseFloat(product.price) * (1 - parseFloat(product.discountPercentage) / 100)
@@ -53,18 +54,19 @@ export function ProductCard({ product, onAddToCart, onToggleWishlist, isInWishli
 
   const handleQuantityChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value
-    setLocalQuantity(value)
+    // Разрешаем пустую строку и только цифры
+    if (value === "" || /^\d+$/.test(value)) {
+      setLocalQuantity(value)
+    }
   }
 
-  const handleQuantityBlur = (e: React.FocusEvent<HTMLInputElement>) => {
-    const value = e.target.value
-    const newQuantity = parseInt(value, 10)
-    if (!isNaN(newQuantity) && newQuantity > 0 && newQuantity <= product.stockQuantity) {
-      setLocalQuantity(String(newQuantity))
-      updateCartItem.mutate({ productId: product.id, quantity: newQuantity })
-    } else {
-      setLocalQuantity(String(cartQuantity))
+  const handleQuantityBlur = () => {
+    const newQuantity = parseInt(localQuantity, 10)
+    if (!isNaN(newQuantity) && newQuantity > 0) {
+      const clampedQuantity = Math.min(Math.max(1, newQuantity), product.stockQuantity)
+      updateCartItem.mutate({ productId: product.id, quantity: clampedQuantity })
     }
+    setLocalQuantity("") // Сбросить после обновления
   }
 
   return (
@@ -154,9 +156,52 @@ export function ProductCard({ product, onAddToCart, onToggleWishlist, isInWishli
         <div className="mt-auto">
           {product.stockQuantity > 0 ? (
             cartQuantity > 0 ? (
-              <div className="flex items-center justify-center h-8 text-sm font-medium text-muted-foreground" data-testid={`text-in-cart-${product.id}`}>
-                <ShoppingCart className="mr-1.5 h-4 w-4" />
-                В корзине: {cartQuantity} из {product.stockQuantity}
+              <div className="flex items-center justify-between gap-0.5 text-[10px] h-8 px-1" data-testid={`text-in-cart-${product.id}`}>
+                <span className="text-muted-foreground whitespace-nowrap">в корзине</span>
+                <div className="flex items-center gap-0.5">
+                  <Button 
+                    size="icon" 
+                    variant="ghost" 
+                    className="h-6 w-6 shrink-0"
+                    onClick={(e) => { 
+                      e.preventDefault(); 
+                      e.stopPropagation();
+                      const newQty = Math.max(1, cartQuantity - 1);
+                      updateCartItem.mutate({ productId: product.id, quantity: newQty });
+                    }}
+                    disabled={cartQuantity <= 1}
+                  >
+                    <Minus className="h-3 w-3" />
+                  </Button>
+                  <Input 
+                    type="text"
+                    value={displayQuantity}
+                    onChange={handleQuantityChange}
+                    onBlur={handleQuantityBlur}
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.currentTarget.blur();
+                      }
+                    }}
+                    className="w-7 h-6 text-center p-0 text-[10px] border-0 focus-visible:ring-1"
+                  />
+                  <Button 
+                    size="icon" 
+                    variant="ghost" 
+                    className="h-6 w-6 shrink-0"
+                    onClick={(e) => { 
+                      e.preventDefault(); 
+                      e.stopPropagation();
+                      const newQty = Math.min(product.stockQuantity, cartQuantity + 1);
+                      updateCartItem.mutate({ productId: product.id, quantity: newQty });
+                    }}
+                    disabled={cartQuantity >= product.stockQuantity}
+                  >
+                    <Plus className="h-3 w-3" />
+                  </Button>
+                </div>
+                <span className="text-muted-foreground whitespace-nowrap">из {product.stockQuantity}</span>
               </div>
             ) : (
               <Button

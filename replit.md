@@ -87,6 +87,35 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+### 2024-11-20: UX Improvements - Cart Badge, Quantity Controls & Fixed Positioning
+
+**Cart Badge Positioning:**
+- ✅ Moved cart badge closer to icon: changed from `-right-1.5 -top-1.5` to `-right-0 -top-0` (~6px closer)
+
+**Product Card Quantity Controls:**
+- ✅ Replaced static "В корзине: X из Y" text with interactive controls
+- ✅ Added compact inline quantity editor with -, input field, + buttons
+- ✅ Implemented free-form text input allowing users to delete all digits before typing
+- ✅ Display shows: "в корзине [−] [input] [+] из [stock]" in one line
+- ✅ Input validates against stock quantity on blur
+- ✅ Enter key commits changes
+
+**Cart Page Input Improvements:**
+- ✅ Fixed quantity inputs to allow complete deletion of digits (resolved controlled input issue)
+- ✅ Implemented local editing state that preserves user input during typing
+- ✅ Added validation on blur to clamp values between 1 and stock quantity
+- ✅ Enter key support for quick editing
+
+**Support Chat Fixed Positioning:**
+- ✅ Enhanced z-index from `z-50` to `!z-[9999]` for both launcher button and widget
+- ✅ Added `!fixed` class to ensure positioning stays fixed to viewport (not page content)
+- ✅ Chat button and widget now stay in bottom-right corner when scrolling
+
+**Technical Implementation:**
+- Modified 5 files: header.tsx, product-card.tsx, cart-page.tsx, support-chat-launcher.tsx, support-chat-widget.tsx
+- Used local state pattern (string type) for inputs to enable free-form editing
+- All inputs use `type="text"` with regex validation instead of `type="number"` for better UX
+
 ### 2024-11-20: Support Chat Widget - Full Implementation & Fixes
 
 **Chat Widget Configuration:**

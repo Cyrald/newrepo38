@@ -1,3 +1,4 @@
+import { useState } from "react"
 import { Link } from "wouter"
 import { Trash2, ShoppingBag, Plus, Minus } from "lucide-react"
 import { Header } from "@/components/header"
@@ -15,6 +16,7 @@ export default function CartPage() {
   const { data: cartItems = [], isLoading } = useCart()
   const updateCartMutation = useUpdateCartItem()
   const removeCartMutation = useRemoveFromCart()
+  const [editingQuantities, setEditingQuantities] = useState<Record<string, string>>({})
 
   const subtotal = cartItems.reduce((sum, item: any) => {
     return sum + (parseFloat(item.product?.price || "0") * item.quantity)
@@ -126,16 +128,31 @@ export default function CartPage() {
                             
                             <Input
                               type="text"
-                              value={item.quantity}
+                              value={editingQuantities[item.id] !== undefined ? editingQuantities[item.id] : String(item.quantity)}
                               onChange={(e) => {
-                                // Allow typing but don't update cart yet
+                                const value = e.target.value;
+                                // Разрешаем пустую строку и только цифры
+                                if (value === "" || /^\d+$/.test(value)) {
+                                  setEditingQuantities(prev => ({ ...prev, [item.id]: value }));
+                                }
                               }}
-                              onBlur={(e) => {
-                                const num = parseInt(e.target.value);
+                              onBlur={() => {
+                                const value = editingQuantities[item.id];
+                                const num = parseInt(value, 10);
                                 if (!isNaN(num) && num > 0) {
-                                  handleUpdateQuantity(item.product.id, num);
-                                } else {
-                                  e.target.value = String(item.quantity);
+                                  const clampedQty = Math.min(num, item.product.stockQuantity);
+                                  handleUpdateQuantity(item.product.id, clampedQty);
+                                }
+                                // Очистить локальный state
+                                setEditingQuantities(prev => {
+                                  const newState = { ...prev };
+                                  delete newState[item.id];
+                                  return newState;
+                                });
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.currentTarget.blur();
                                 }
                               }}
                               className="h-8 w-16 text-center"
