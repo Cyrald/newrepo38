@@ -24,10 +24,20 @@ export function SupportChatWidget({ isOpen, onClose }: SupportChatWidgetProps) {
   const queryClient = useQueryClient()
   const user = useAuthStore((state) => state.user)
 
-  // Fetch messages
+  // Fetch conversation status
+  const { data: statusData } = useQuery<{ status: string }>({
+    queryKey: ["/api/support/conversation-status"],
+    enabled: isOpen,
+    refetchInterval: 5000,
+  })
+
+  const conversationStatus = statusData?.status || 'none'
+  const isChatClosed = conversationStatus === 'closed'
+
+  // Fetch messages only if not closed
   const { data: messages = [], isLoading } = useQuery<SupportMessage[]>({
     queryKey: ["/api/support/messages"],
-    enabled: isOpen,
+    enabled: isOpen && !isChatClosed,
   })
 
   // Send message mutation
@@ -43,13 +53,9 @@ export function SupportChatWidget({ isOpen, onClose }: SupportChatWidgetProps) {
       })
     },
     onMutate: async (text) => {
-      // Cancel outgoing refetches
       await queryClient.cancelQueries({ queryKey: ["/api/support/messages"] })
-
-      // Snapshot previous value
       const previousMessages = queryClient.getQueryData<SupportMessage[]>(["/api/support/messages"])
 
-      // Optimistically update with temp message
       if (previousMessages && user?.id) {
         const tempMessage: SupportMessage = {
           id: `temp-${Date.now()}`,
@@ -69,20 +75,18 @@ export function SupportChatWidget({ isOpen, onClose }: SupportChatWidgetProps) {
     },
     onSuccess: (data) => {
       setMessage("")
-      // Update with real message from server
       queryClient.setQueryData<SupportMessage[]>(
         ["/api/support/messages"],
         (old) => {
           if (!old) return [data]
-          // Remove temp messages and check for duplicates
           const withoutTemp = old.filter(m => !m.id.startsWith('temp-'))
           if (withoutTemp.some(m => m.id === data.id)) return withoutTemp
           return [...withoutTemp, data]
         }
       )
+      queryClient.invalidateQueries({ queryKey: ["/api/support/conversation-status"] })
     },
     onError: (_error, _variables, context) => {
-      // Rollback on error
       if (context?.previousMessages) {
         queryClient.setQueryData(["/api/support/messages"], context.previousMessages)
       }
@@ -101,16 +105,16 @@ export function SupportChatWidget({ isOpen, onClose }: SupportChatWidgetProps) {
 
       const unsubscribe = wsClient.onMessage((msg) => {
         if (msg.type === "new_message" && msg.message) {
-          // Directly add the message to the cache
           queryClient.setQueryData<SupportMessage[]>(
             ["/api/support/messages"],
             (old) => {
               if (!old) return [msg.message]
-              // Avoid duplicates
               if (old.some(m => m.id === msg.message.id)) return old
               return [...old, msg.message]
             }
           )
+        } else if (msg.type === "conversation_closed" || msg.type === "conversation_archived") {
+          queryClient.invalidateQueries({ queryKey: ["/api/support/conversation-status"] })
         }
       })
 
@@ -122,13 +126,13 @@ export function SupportChatWidget({ isOpen, onClose }: SupportChatWidgetProps) {
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
-    if (scrollAreaRef.current) {
+    if (scrollAreaRef.current && !isChatClosed) {
       const scrollContainer = scrollAreaRef.current.querySelector('[data-radix-scroll-area-viewport]')
       if (scrollContainer) {
         scrollContainer.scrollTop = scrollContainer.scrollHeight
       }
     }
-  }, [messages])
+  }, [messages, isChatClosed])
 
   const handleSendMessage = () => {
     if (!message.trim()) return
@@ -144,10 +148,9 @@ export function SupportChatWidget({ isOpen, onClose }: SupportChatWidgetProps) {
 
   if (!isOpen) return null
 
-  // Show chat widget in bottom right corner - responsive design (125% larger)
   return (
     <div className="!fixed bottom-[76px] right-6 !z-[9999] flex flex-col w-[90vw] sm:w-[315px] h-[55vh] sm:h-[487px] max-h-[487px] bg-background border rounded-2xl shadow-2xl animate-in slide-in-from-bottom-4 duration-300">
-      {/* Header - 50% smaller */}
+      {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b bg-primary text-primary-foreground rounded-t-2xl">
         <div className="flex items-center gap-2">
           <MessageCircle className="h-4 w-4" />
@@ -163,9 +166,28 @@ export function SupportChatWidget({ isOpen, onClose }: SupportChatWidgetProps) {
         </Button>
       </div>
 
-      {/* Messages Area - Increased height */}
+      {/* Messages Area or Closed State */}
       <ScrollArea ref={scrollAreaRef} className="flex-1 p-3">
-        {isLoading ? (
+        {isChatClosed ? (
+          <div className="flex flex-col items-center justify-center h-full gap-3">
+            <MessageCircle className="h-12 w-12 text-muted-foreground" />
+            <div className="text-center">
+              <p className="text-sm font-medium mb-1">Чат закрыт</p>
+              <p className="text-xs text-muted-foreground mb-3">
+                Начните новый диалог нажав кнопку ниже
+              </p>
+              <Button
+                size="sm"
+                onClick={() => {
+                  queryClient.invalidateQueries({ queryKey: ["/api/support/conversation-status"] })
+                }}
+                className="text-xs h-7"
+              >
+                Начать новый чат
+              </Button>
+            </div>
+          </div>
+        ) : isLoading ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-center">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
@@ -211,30 +233,32 @@ export function SupportChatWidget({ isOpen, onClose }: SupportChatWidgetProps) {
         )}
       </ScrollArea>
 
-      {/* Input Area - Smaller */}
-      <div className="px-3 py-2 border-t">
-        <div className="flex gap-2">
-          <Textarea
-            placeholder="Введите сообщение..."
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            onKeyDown={handleKeyPress}
-            rows={1}
-            className="resize-none min-h-[36px]"
-          />
-          <Button
-            onClick={handleSendMessage}
-            disabled={!message.trim() || sendMessageMutation.isPending}
-            size="sm"
-            className="h-9 w-9 p-0"
-          >
-            <Send className="h-4 w-4" />
-          </Button>
+      {/* Input Area - Hidden if closed */}
+      {!isChatClosed && (
+        <div className="px-3 py-2 border-t">
+          <div className="flex gap-2">
+            <Textarea
+              placeholder="Введите сообщение..."
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              onKeyDown={handleKeyPress}
+              rows={1}
+              className="resize-none min-h-[36px]"
+            />
+            <Button
+              onClick={handleSendMessage}
+              disabled={!message.trim() || sendMessageMutation.isPending}
+              size="sm"
+              className="h-9 w-9 p-0"
+            >
+              <Send className="h-4 w-4" />
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground mt-1.5">
+            Нажмите Enter для отправки, Shift+Enter для новой строки
+          </p>
         </div>
-        <p className="text-xs text-muted-foreground mt-1.5">
-          Нажмите Enter для отправки, Shift+Enter для новой строки
-        </p>
-      </div>
+      )}
     </div>
   )
 }

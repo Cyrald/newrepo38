@@ -87,6 +87,66 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+### 2024-11-23: Three-Tier Support Chat System Implementation
+
+**Database Schema Updates:**
+- ✅ Modified `supportConversations` table: changed `status` from boolean to enum ('open' | 'archived' | 'closed')
+- ✅ Removed unique constraint on `userId` (allows multiple conversations per user across different statuses)
+- ✅ Added `closedAt` timestamp field for tracking when chats are permanently closed
+- ✅ Added `lastMessageAt` timestamp field for sorting conversations by recency
+- ✅ Added `archivedAt` timestamp field for archival tracking
+
+**Backend Storage Functions (server/storage.ts):**
+- ✅ `getOrCreateConversation()`: Auto-reopens archived conversations when user sends message; creates new if closed
+- ✅ `getActiveConversation()`: Returns active (open or archived) conversation for a user
+- ✅ `getConversationStatus()`: Retrieves current status of user's conversation
+- ✅ `archiveConversation()`: Transitions conversation from 'open' to 'archived'
+- ✅ `closeConversation()`: Transitions conversation to 'closed' (permanent, complies with 152-ФЗ)
+- ✅ `reopenConversation()`: Reopens archived conversations back to 'open' status
+- ✅ `updateLastMessageTime()`: Updates lastMessageAt timestamp
+- ✅ `searchClosedConversations()`: Full-text search of closed conversations by email/date range
+- ✅ `getAllSupportConversations()`: Returns conversations filtered by status, sorted by lastMessageAt
+
+**Backend API Endpoints (server/routes.ts):**
+- ✅ `/api/support/conversations?status=open|archived|closed`: Fetch conversations by status (sorted by recency)
+- ✅ `/api/support/conversations/:userId/archive`: Archive a conversation
+- ✅ `/api/support/conversations/:userId/close`: Permanently close a conversation
+- ✅ `/api/support/conversations/:userId/reopen`: Reopen an archived conversation
+- ✅ `/api/support/conversation-status`: Get current chat status (customer endpoint)
+- ✅ `/api/support/closed-search?email=X&dateFrom=Y&dateTo=Z`: Search closed conversations
+- ✅ Removed `unreadCount` from conversation responses (not needed with 3-tier system)
+- ✅ WebSocket notifications for conversation state changes
+
+**Admin Panel (client/src/pages/admin/support-chat-page.tsx):**
+- ✅ Added 3 tabs: "Открытые" (Open) | "Архив" (Archived) | "Закрытые" (Closed)
+- ✅ Compacted UI: all sizes ~20% smaller, no page-level scrollbars
+- ✅ Search interface for closed conversations (email + date range filters)
+- ✅ Removed unread message counter from chat list
+- ✅ Context-sensitive action buttons per status:
+  - Open: Archive | Close buttons
+  - Archived: Reopen | Close buttons
+  - Closed: Display-only, no input area, "stored per 152-ФЗ" message
+- ✅ Status change notifications via WebSocket
+
+**Customer Chat Widget (client/src/components/support-chat-widget.tsx):**
+- ✅ Fetches conversation status on load and every 5 seconds
+- ✅ If status is 'closed': shows "Chat closed, start new" screen instead of messages
+- ✅ Input area hidden for closed conversations
+- ✅ Auto-hidden messages for closed chats (complies with Russian data retention law)
+- ✅ Handles conversation_archived/conversation_closed WebSocket events
+
+**Chat Launcher (client/src/components/support-chat-launcher.tsx):**
+- ✅ Smooth animation: button switches between MessageCircle ↔ X icons
+- ✅ Fade-in/rotate animations on icon changes
+- ✅ Only visible to authenticated non-staff users
+
+**Business Logic - Three-Tier Chat System:**
+- **Open**: Active conversation, customer can message, admin can archive or close
+- **Archived**: Resolved but reopenable; auto-reopens on customer's new message
+- **Closed**: Permanent state; messages hidden from UI but stored in DB per 152-ФЗ (3-year retention)
+- All status transitions tracked with timestamps
+- Conversations sorted by lastMessageAt (most recent first)
+
 ### 2024-11-20: UX Improvements - Cart Badge, Quantity Controls & Fixed Positioning
 
 **Cart Badge Positioning:**
