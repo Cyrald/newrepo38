@@ -74,6 +74,12 @@ app.use(express.urlencoded({
 
 
 (async () => {
+  if (env.NODE_ENV === 'production' && !env.FRONTEND_URL) {
+    throw new Error(
+      'FRONTEND_URL environment variable must be set in production mode for CORS configuration'
+    );
+  }
+
   app.use('/uploads', express.static('uploads'));
   
   app.use('/api', generalApiLimiter);

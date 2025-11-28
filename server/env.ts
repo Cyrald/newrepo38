@@ -21,6 +21,9 @@ const envSchema = z.object({
   DATABASE_URL: z.string().url('DATABASE_URL must be a valid URL'),
   SESSION_SECRET: z.string().min(32, 'SESSION_SECRET must be at least 32 characters long'),
   
+  FRONTEND_URL: z.string().url().optional(),
+  REPLIT_DEV_DOMAIN: z.string().optional(),
+  
   EMAIL_HOST: z.string().optional(),
   EMAIL_PORT: z.string().optional(),
   EMAIL_USER: z.string().optional(),
