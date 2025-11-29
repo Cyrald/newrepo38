@@ -6,7 +6,7 @@ import { db } from "./db";
 import * as cookieSignature from "cookie-signature";
 import { env } from "./env";
 import { logger } from "./utils/logger";
-import { sql } from "drizzle-orm";
+import { BUSINESS_CONFIG } from "./config/business";
 
 import healthRoutes from "./routes/health.routes";
 import authRoutes from "./routes/auth.routes";
@@ -62,10 +62,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
     
     try {
-      const result = await db.execute(sql`SELECT sess FROM session WHERE sid = ${sid}`);
-      if (!result.rows || result.rows.length === 0) return null;
+      const sessionRecord = await db.query.sessions.findFirst({
+        where: (sessions, { eq }) => eq(sessions.sid, sid),
+      });
       
-      const sessionData = result.rows[0].sess as any;
+      if (!sessionRecord) return null;
+      
+      const sessionData = sessionRecord.sess as any;
       if (!sessionData || !sessionData.userId) return null;
       
       return {
@@ -80,10 +83,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   const connectionRateLimits = new Map<string, { count: number; resetAt: number }>();
   const messageRateLimits = new Map<string, { count: number; resetAt: number }>();
-  const CONNECTION_LIMIT = 10;
-  const CONNECTION_WINDOW = 60 * 1000;
-  const MESSAGE_LIMIT = 60;
-  const MESSAGE_WINDOW = 60 * 1000;
+  const { connectionLimit, connectionWindowMs, messageLimit, messageWindowMs } = BUSINESS_CONFIG.websocket;
 
   setInterval(() => {
     const now = Date.now();
@@ -114,14 +114,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const clientIp = req.headers['x-forwarded-for']?.split(',')[0].trim() || req.socket.remoteAddress;
     
     const now = Date.now();
-    const ipLimit = connectionRateLimits.get(clientIp) || { count: 0, resetAt: now + CONNECTION_WINDOW };
+    const ipLimit = connectionRateLimits.get(clientIp) || { count: 0, resetAt: now + connectionWindowMs };
     
     if (now > ipLimit.resetAt) {
       ipLimit.count = 0;
-      ipLimit.resetAt = now + CONNECTION_WINDOW;
+      ipLimit.resetAt = now + connectionWindowMs;
     }
     
-    if (ipLimit.count >= CONNECTION_LIMIT) {
+    if (ipLimit.count >= connectionLimit) {
       logger.warn('WebSocket connection rate limit exceeded', { clientIp });
       ws.close(1008, 'Too many connections');
       return;
@@ -153,14 +153,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     ws.on("message", async (data: any) => {
       try {
         const msgNow = Date.now();
-        const userMsgLimit = messageRateLimits.get(userId) || { count: 0, resetAt: msgNow + MESSAGE_WINDOW };
+        const userMsgLimit = messageRateLimits.get(userId) || { count: 0, resetAt: msgNow + messageWindowMs };
         
         if (msgNow > userMsgLimit.resetAt) {
           userMsgLimit.count = 0;
-          userMsgLimit.resetAt = msgNow + MESSAGE_WINDOW;
+          userMsgLimit.resetAt = msgNow + messageWindowMs;
         }
         
-        if (userMsgLimit.count >= MESSAGE_LIMIT) {
+        if (userMsgLimit.count >= messageLimit) {
           logger.warn('WebSocket message rate limit exceeded', { userId });
           ws.send(JSON.stringify({
             type: "rate_limit",

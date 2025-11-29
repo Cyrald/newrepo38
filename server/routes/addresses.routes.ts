@@ -1,6 +1,9 @@
 import { Router } from "express";
 import { storage } from "../storage";
 import { authenticateToken } from "../auth";
+import { createAddressSchema, updateAddressSchema } from "@shared/schema";
+import { requireOwnership } from "../middleware/resourceOwnership";
+import { z } from "zod";
 
 const router = Router();
 
@@ -10,69 +13,84 @@ router.get("/", authenticateToken, async (req, res) => {
 });
 
 router.post("/", authenticateToken, async (req, res) => {
-  const address = await storage.createUserAddress({
-    userId: req.userId!,
-    label: req.body.label || "Дом",
-    fullAddress: req.body.fullAddress,
-    city: req.body.city,
-    street: req.body.street,
-    building: req.body.building,
-    apartment: req.body.apartment || null,
-    postalCode: req.body.postalCode,
-    isDefault: req.body.isDefault || false,
-  });
+  try {
+    const data = createAddressSchema.parse(req.body);
+    
+    const address = await storage.createUserAddress({
+      ...data,
+      userId: req.userId!,
+      apartment: data.apartment || null,
+    });
 
-  if (req.body.isDefault) {
-    await storage.setDefaultAddress(req.userId!, address.id);
+    if (data.isDefault) {
+      await storage.setDefaultAddress(req.userId!, address.id);
+    }
+
+    res.json(address);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ 
+        message: error.errors[0].message,
+        errors: error.errors 
+      });
+    }
+    throw error;
   }
-
-  res.json(address);
 });
 
-router.put("/:id", authenticateToken, async (req, res) => {
-  const existingAddress = await storage.getUserAddress(req.params.id);
-  
-  if (!existingAddress) {
-    return res.status(404).json({ message: "Адрес не найден" });
+router.put(
+  "/:id", 
+  authenticateToken,
+  requireOwnership(
+    (id) => storage.getUserAddress(id),
+    "Адрес"
+  ),
+  async (req, res) => {
+    try {
+      const data = updateAddressSchema.parse(req.body);
+
+      const updated = await storage.updateUserAddress(req.params.id, {
+        ...data,
+        apartment: data.apartment || null,
+      });
+
+      res.json(updated);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          message: error.errors[0].message,
+          errors: error.errors 
+        });
+      }
+      throw error;
+    }
   }
-  
-  if (existingAddress.userId !== req.userId) {
-    return res.status(403).json({ message: "Нет доступа к этому адресу" });
+);
+
+router.delete(
+  "/:id",
+  authenticateToken,
+  requireOwnership(
+    (id) => storage.getUserAddress(id),
+    "Адрес"
+  ),
+  async (req, res) => {
+    await storage.deleteUserAddress(req.params.id);
+    res.json({ message: "Адрес удалён" });
   }
+);
 
-  const updated = await storage.updateUserAddress(req.params.id, {
-    label: req.body.label,
-    fullAddress: req.body.fullAddress,
-    city: req.body.city,
-    street: req.body.street,
-    building: req.body.building,
-    apartment: req.body.apartment || null,
-    postalCode: req.body.postalCode,
-  });
-
-  res.json(updated);
-});
-
-router.delete("/:id", authenticateToken, async (req, res) => {
-  const address = await storage.getUserAddress(req.params.id);
-  
-  if (!address || address.userId !== req.userId) {
-    return res.status(403).json({ message: "Нет доступа к этому адресу" });
+router.put(
+  "/:id/set-default",
+  authenticateToken,
+  requireOwnership(
+    (id) => storage.getUserAddress(id),
+    "Адрес"
+  ),
+  async (req, res) => {
+    await storage.setDefaultAddress(req.userId!, req.params.id);
+    res.json({ message: "Адрес установлен по умолчанию" });
   }
-
-  await storage.deleteUserAddress(req.params.id);
-  res.json({ message: "Адрес удалён" });
-});
-
-router.put("/:id/set-default", authenticateToken, async (req, res) => {
-  const address = await storage.getUserAddress(req.params.id);
-  
-  if (!address || address.userId !== req.userId) {
-    return res.status(403).json({ message: "Нет доступа к этому адресу" });
-  }
-
-  await storage.setDefaultAddress(req.userId!, req.params.id);
-  res.json({ message: "Адрес установлен по умолчанию" });
-});
+);
 
 export default router;

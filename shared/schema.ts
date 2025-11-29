@@ -285,6 +285,14 @@ export const supportMessages = pgTable("support_messages", {
   createdAtIdx: index("support_messages_created_at_idx").on(table.createdAt),
 }));
 
+export const sessions = pgTable("session", {
+  sid: varchar("sid").primaryKey(),
+  sess: jsonb("sess").notNull(),
+  expire: timestamp("expire").notNull(),
+}, (table) => ({
+  expireIdx: index("session_expire_idx").on(table.expire),
+}));
+
 export const supportMessageAttachments = pgTable("support_message_attachments", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   messageId: varchar("message_id").notNull().references(() => supportMessages.id, { onDelete: "cascade" }),
@@ -430,6 +438,56 @@ export const insertUserPaymentCardSchema = createInsertSchema(userPaymentCards).
   id: true,
   createdAt: true,
 });
+
+export const createAddressSchema = z.object({
+  label: z.string()
+    .min(1, "Название адреса обязательно")
+    .max(100, "Название слишком длинное"),
+  
+  fullAddress: z.string()
+    .min(10, "Полный адрес слишком короткий")
+    .max(500, "Адрес слишком длинный"),
+  
+  city: z.string()
+    .min(2, "Название города обязательно")
+    .max(100, "Название города слишком длинное"),
+  
+  street: z.string()
+    .min(2, "Название улицы обязательно")
+    .max(200, "Название улицы слишком длинное"),
+  
+  building: z.string()
+    .min(1, "Номер дома обязателен")
+    .max(20, "Номер дома слишком длинный"),
+  
+  apartment: z.string()
+    .max(20, "Номер квартиры слишком длинный")
+    .optional(),
+  
+  postalCode: z.string()
+    .regex(/^\d{6}$/, "Индекс должен состоять из 6 цифр"),
+  
+  isDefault: z.boolean().optional().default(false),
+});
+
+export const updateAddressSchema = createAddressSchema.partial();
+
+export const createPaymentCardSchema = z.object({
+  yukassaPaymentToken: z.string()
+    .min(1, "Токен обязателен")
+    .max(500, "Токен слишком длинный"),
+  
+  cardLastFour: z.string()
+    .regex(/^\d{4}$/, "Последние 4 цифры карты должны быть числами"),
+  
+  cardType: z.enum(["visa", "mastercard", "mir", "other"], {
+    errorMap: () => ({ message: "Неподдерживаемый тип карты" })
+  }),
+  
+  isDefault: z.boolean().optional().default(false),
+});
+
+export const updatePaymentCardSchema = createPaymentCardSchema.partial();
 
 export const insertPromocodeSchema = createInsertSchema(promocodes, {
   code: z.string().regex(/^[A-Z0-9]{4,20}$/, "Промокод должен содержать только буквы и цифры (4-20 символов)"),

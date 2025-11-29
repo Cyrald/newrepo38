@@ -1,6 +1,9 @@
 import { Router } from "express";
 import { storage } from "../storage";
 import { authenticateToken } from "../auth";
+import { createPaymentCardSchema } from "@shared/schema";
+import { requireOwnership } from "../middleware/resourceOwnership";
+import { z } from "zod";
 
 const router = Router();
 
@@ -10,41 +13,54 @@ router.get("/", authenticateToken, async (req, res) => {
 });
 
 router.post("/", authenticateToken, async (req, res) => {
-  const card = await storage.createUserPaymentCard({
-    userId: req.userId!,
-    yukassaPaymentToken: req.body.yukassaPaymentToken,
-    cardLastFour: req.body.cardLastFour,
-    cardType: req.body.cardType,
-    isDefault: req.body.isDefault || false,
-  });
+  try {
+    const data = createPaymentCardSchema.parse(req.body);
 
-  if (req.body.isDefault) {
-    await storage.setDefaultPaymentCard(req.userId!, card.id);
+    const card = await storage.createUserPaymentCard({
+      ...data,
+      userId: req.userId!,
+    });
+
+    if (data.isDefault) {
+      await storage.setDefaultPaymentCard(req.userId!, card.id);
+    }
+
+    res.json(card);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ 
+        message: error.errors[0].message,
+        errors: error.errors 
+      });
+    }
+    throw error;
   }
-
-  res.json(card);
 });
 
-router.delete("/:id", authenticateToken, async (req, res) => {
-  const card = await storage.getUserPaymentCard(req.params.id);
-  
-  if (!card || card.userId !== req.userId) {
-    return res.status(403).json({ message: "Нет доступа к этой карте" });
+router.delete(
+  "/:id",
+  authenticateToken,
+  requireOwnership(
+    (id) => storage.getUserPaymentCard(id),
+    "Карта"
+  ),
+  async (req, res) => {
+    await storage.deleteUserPaymentCard(req.params.id);
+    res.json({ message: "Карта удалена" });
   }
+);
 
-  await storage.deleteUserPaymentCard(req.params.id);
-  res.json({ message: "Карта удалена" });
-});
-
-router.put("/:id/set-default", authenticateToken, async (req, res) => {
-  const card = await storage.getUserPaymentCard(req.params.id);
-  
-  if (!card || card.userId !== req.userId) {
-    return res.status(403).json({ message: "Нет доступа к этой карте" });
+router.put(
+  "/:id/set-default",
+  authenticateToken,
+  requireOwnership(
+    (id) => storage.getUserPaymentCard(id),
+    "Карта"
+  ),
+  async (req, res) => {
+    await storage.setDefaultPaymentCard(req.userId!, req.params.id);
+    res.json({ message: "Карта установлена по умолчанию" });
   }
-
-  await storage.setDefaultPaymentCard(req.userId!, req.params.id);
-  res.json({ message: "Карта установлена по умолчанию" });
-});
+);
 
 export default router;

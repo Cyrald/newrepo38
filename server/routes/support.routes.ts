@@ -152,7 +152,9 @@ export function createSupportRoutes(connectedUsers: Map<string, ConnectedUser>) 
 
   router.get("/closed-search", authenticateToken, requireRole("admin", "consultant"), async (req, res) => {
     const query = req.query.q as string;
-    const closedConversations = await storage.searchClosedConversations(query);
+    const closedConversations = await storage.searchClosedConversations({
+      email: query,
+    });
     res.json(closedConversations);
   });
 
@@ -173,9 +175,9 @@ export function createSupportRoutes(connectedUsers: Map<string, ConnectedUser>) 
       const dbAttachments = [];
       
       for (const processedImage of processedImages) {
-        const attachment = await storage.createSupportMessageAttachment({
+        const attachment = await storage.addSupportMessageAttachment({
           messageId: req.params.id,
-          url: processedImage.url,
+          fileUrl: processedImage.url,
           fileType: processedImage.mimeType,
           fileSize: processedImage.size,
         });

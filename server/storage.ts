@@ -136,6 +136,7 @@ export interface IStorage {
   deleteSupportMessageAttachment(id: string): Promise<void>;
   
   getOrCreateConversation(userId: string): Promise<SupportConversation>;
+  getSupportConversation(userId: string): Promise<SupportConversation | undefined>;
   getActiveConversation(userId: string): Promise<SupportConversation | undefined>;
   getConversationStatus(userId: string): Promise<{ status: string } | undefined>;
   archiveConversation(userId: string): Promise<void>;
@@ -756,6 +757,15 @@ export class DatabaseStorage implements IStorage {
 
   async deleteSupportMessageAttachment(id: string): Promise<void> {
     await db.delete(supportMessageAttachments).where(eq(supportMessageAttachments.id, id));
+  }
+
+  async getSupportConversation(userId: string): Promise<SupportConversation | undefined> {
+    const [conversation] = await db
+      .select()
+      .from(supportConversations)
+      .where(eq(supportConversations.userId, userId))
+      .limit(1);
+    return conversation;
   }
 
   async getOrCreateConversation(userId: string): Promise<SupportConversation> {
