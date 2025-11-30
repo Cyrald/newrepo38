@@ -19,6 +19,20 @@ const app = express();
 
 app.set('trust proxy', 1);
 
+if (env.NODE_ENV === 'production') {
+  app.use((req, res, next) => {
+    if (req.headers['x-forwarded-proto'] !== 'https') {
+      logger.warn('HTTP request redirected to HTTPS', { 
+        ip: req.ip, 
+        url: req.url,
+        method: req.method
+      });
+      return res.redirect(307, `https://${req.headers.host}${req.url}`);
+    }
+    next();
+  });
+}
+
 app.use(corsMiddleware);
 
 app.use(helmet({
@@ -36,6 +50,11 @@ app.use(helmet({
     },
   } : false,
   crossOriginEmbedderPolicy: false,
+  hsts: env.NODE_ENV === 'production' ? {
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: true
+  } : false,
 }));
 
 app.use(requestLogger);

@@ -256,11 +256,11 @@ export class DatabaseStorage implements IStorage {
       conditions.push(or(...categoryConditions)!);
     }
     if (filters?.search) {
-      const sanitizedSearch = filters.search.replace(/[%_\\]/g, '\\$&');
+      const searchTerm = `%${filters.search}%`;
       conditions.push(
         or(
-          like(products.name, `%${sanitizedSearch}%`),
-          like(products.description, `%${sanitizedSearch}%`)
+          sql`${products.name} ILIKE ${searchTerm}`,
+          sql`${products.description} ILIKE ${searchTerm}`
         )!
       );
     }

@@ -29,7 +29,7 @@ export const users = pgTable("users", {
   isVerified: boolean("is_verified").default(false).notNull(),
   verificationToken: text("verification_token"),
   verificationTokenExpires: timestamp("verification_token_expires"),
-  bonusBalance: integer("bonus_balance").default(100).notNull(),
+  bonusBalance: integer("bonus_balance").default(100).notNull().$defaultFn(() => 100),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => ({
@@ -76,7 +76,7 @@ export const products = pgTable("products", {
   dimensionsLength: decimal("dimensions_length"),
   dimensionsWidth: decimal("dimensions_width"),
   shelfLifeDays: integer("shelf_life_days"),
-  stockQuantity: integer("stock_quantity").default(0).notNull(),
+  stockQuantity: integer("stock_quantity").default(0).notNull().$defaultFn(() => 0),
   price: decimal("price").notNull(),
   discountPercentage: decimal("discount_percentage").default("0").notNull(),
   discountStartDate: timestamp("discount_start_date"),

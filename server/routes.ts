@@ -68,6 +68,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       if (!sessionRecord) return null;
       
+      const now = new Date();
+      const expireDate = new Date(sessionRecord.expire);
+      
+      if (expireDate < now) {
+        logger.warn('Expired session detected in WebSocket', { 
+          sid, 
+          expiredAt: expireDate 
+        });
+        return null;
+      }
+      
       const sessionData = sessionRecord.sess as any;
       if (!sessionData || !sessionData.userId) return null;
       
@@ -83,6 +94,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   const connectionRateLimits = new Map<string, { count: number; resetAt: number }>();
   const messageRateLimits = new Map<string, { count: number; resetAt: number }>();
+  const activeConnectionsByIp = new Map<string, Set<any>>();
+  const MAX_CONCURRENT_CONNECTIONS_PER_IP = 5;
+  const MAX_MESSAGE_SIZE = 50 * 1024;
   const { connectionLimit, connectionWindowMs, messageLimit, messageWindowMs } = BUSINESS_CONFIG.websocket;
 
   setInterval(() => {
@@ -112,6 +126,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   wss.on("connection", async (ws: any, req: any) => {
     const clientIp = req.headers['x-forwarded-for']?.split(',')[0].trim() || req.socket.remoteAddress;
+    
+    const activeConns = activeConnectionsByIp.get(clientIp) || new Set();
+    if (activeConns.size >= MAX_CONCURRENT_CONNECTIONS_PER_IP) {
+      logger.warn('Too many concurrent WebSocket connections from IP', { 
+        clientIp, 
+        count: activeConns.size 
+      });
+      ws.close(1008, 'Maximum concurrent connections exceeded');
+      return;
+    }
+    
+    const origin = req.headers.origin;
+    if (env.NODE_ENV === 'production') {
+      const allowedOrigins = [
+        env.FRONTEND_URL,
+        env.REPLIT_DEV_DOMAIN
+      ].filter(Boolean);
+      
+      if (!origin || !allowedOrigins.includes(origin)) {
+        logger.warn('WebSocket connection from invalid origin', { origin, clientIp });
+        ws.close(1008, 'Invalid origin');
+        return;
+      }
+    }
     
     const now = Date.now();
     const ipLimit = connectionRateLimits.get(clientIp) || { count: 0, resetAt: now + connectionWindowMs };
@@ -143,6 +181,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const userRoles = userRoleRecords.map(r => r.role);
     connectedUsers.set(userId, { ws, roles: userRoles });
     
+    activeConns.add(ws);
+    activeConnectionsByIp.set(clientIp, activeConns);
+    
     logger.info('WebSocket connection established', { userId, roles: userRoles });
     
     ws.send(JSON.stringify({
@@ -171,16 +212,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       ws.ping();
     }, 30000);
 
+    let messageTimeout: NodeJS.Timeout | null = null;
+
     ws.on("message", async (data: any) => {
       try {
-        const MAX_MESSAGE_SIZE = 100 * 1024;
+        if (messageTimeout) clearTimeout(messageTimeout);
         
         if (data.length > MAX_MESSAGE_SIZE) {
-          logger.warn('WebSocket message too large', { userId, size: data.length });
-          ws.send(JSON.stringify({
-            type: "error",
-            message: "Сообщение слишком большое (максимум 100KB)",
-          }));
+          logger.warn('WebSocket message too large', { userId, size: data.length, maxSize: MAX_MESSAGE_SIZE });
+          ws.close(1009, 'Message too large');
           return;
         }
 
@@ -206,20 +246,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         const message = JSON.parse(data.toString());
         
+        if (messageTimeout) clearTimeout(messageTimeout);
+        messageTimeout = null;
+        
       } catch (error) {
         logger.error("WebSocket message error", { error, userId });
+        if (messageTimeout) clearTimeout(messageTimeout);
+        messageTimeout = null;
       }
     });
 
     ws.on("close", () => {
       clearInterval(pingInterval);
+      if (messageTimeout) clearTimeout(messageTimeout);
       connectedUsers.delete(userId);
       messageRateLimits.delete(userId);
+      
+      const conns = activeConnectionsByIp.get(clientIp);
+      if (conns) {
+        conns.delete(ws);
+        if (conns.size === 0) {
+          activeConnectionsByIp.delete(clientIp);
+        }
+      }
     });
 
     ws.on("error", (error: any) => {
       logger.error('WebSocket error', { error, userId });
       clearInterval(pingInterval);
+      if (messageTimeout) clearTimeout(messageTimeout);
+      connectedUsers.delete(userId);
+      messageRateLimits.delete(userId);
+      
+      const conns = activeConnectionsByIp.get(clientIp);
+      if (conns) {
+        conns.delete(ws);
+        if (conns.size === 0) {
+          activeConnectionsByIp.delete(clientIp);
+        }
+      }
     });
   });
 

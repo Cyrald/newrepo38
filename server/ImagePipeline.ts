@@ -170,6 +170,31 @@ export class ImagePipeline {
       const finalPath = path.join(this.uploadsDir, uniqueFilename);
       tempOutputPath = path.join(this.tempDir, `out-${uniqueFilename}`);
       
+      const resolvedFinal = path.resolve(finalPath);
+      const resolvedUploadDir = path.resolve(this.uploadsDir);
+      const resolvedTemp = path.resolve(tempOutputPath);
+      const resolvedTempDir = path.resolve(this.tempDir);
+      
+      if (!resolvedFinal.startsWith(resolvedUploadDir + path.sep) && 
+          resolvedFinal !== resolvedUploadDir) {
+        logger.error('Path traversal attempt detected in processImage', { 
+          uniqueFilename, 
+          resolvedFinal, 
+          resolvedUploadDir 
+        });
+        throw new Error('Invalid file path detected');
+      }
+      
+      if (!resolvedTemp.startsWith(resolvedTempDir + path.sep) && 
+          resolvedTemp !== resolvedTempDir) {
+        logger.error('Path traversal attempt detected in temp path', { 
+          tempOutputPath, 
+          resolvedTemp, 
+          resolvedTempDir 
+        });
+        throw new Error('Invalid temp path detected');
+      }
+      
       this.tempFiles.set(tempOutputPath, Date.now());
 
       const image = sharp(buffer);

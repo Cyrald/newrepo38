@@ -91,21 +91,23 @@ export function createOrdersRoutes(connectedUsers: Map<string, ConnectedUser>) {
             .where(eq(promocodes.code, uppercaseCode))
             .limit(1);
 
+          const genericError = 'PROMOCODE_INVALID';
+
           if (!promo) {
-            throw new Error('PROMOCODE_INVALID:Промокод не найден');
+            throw new Error(genericError);
           }
 
           if (!promo.isActive) {
-            throw new Error('PROMOCODE_INVALID:Промокод деактивирован');
+            throw new Error(genericError);
           }
 
           if (promo.expiresAt && new Date(promo.expiresAt) < new Date()) {
-            throw new Error('PROMOCODE_INVALID:Срок действия промокода истёк');
+            throw new Error(genericError);
           }
 
           const minAmount = parseFloat(promo.minOrderAmount);
           if (subtotal < minAmount) {
-            throw new Error(`PROMOCODE_INVALID:Минимальная сумма заказа для этого промокода: ${minAmount} ₽`);
+            throw new Error(genericError);
           }
 
           if (promo.type === "temporary") {
@@ -121,7 +123,7 @@ export function createOrdersRoutes(connectedUsers: Map<string, ConnectedUser>) {
               .limit(1);
 
             if (usage) {
-              throw new Error('PROMOCODE_INVALID:Вы уже использовали этот промокод');
+              throw new Error(genericError);
             }
           }
 
@@ -147,49 +149,76 @@ export function createOrdersRoutes(connectedUsers: Map<string, ConnectedUser>) {
         );
 
         for (const item of data.items) {
-          const [product] = await tx
-            .select()
-            .from(products)
-            .where(eq(products.id, item.productId))
-            .for('update')
-            .limit(1);
-          
-          if (!product) {
-            throw new Error(`PRODUCT_NOT_FOUND:${item.productId}`);
-          }
-          
-          if (product.stockQuantity < item.quantity) {
-            throw new Error(`INSUFFICIENT_STOCK:${product.name}:${product.stockQuantity}:${item.quantity}`);
-          }
-          
-          await tx
+          const updateResult = await tx
             .update(products)
             .set({ 
               stockQuantity: sql`${products.stockQuantity} - ${item.quantity}`,
               updatedAt: new Date()
             })
-            .where(eq(products.id, item.productId));
+            .where(
+              and(
+                eq(products.id, item.productId),
+                sql`${products.stockQuantity} >= ${item.quantity}`
+              )
+            )
+            .returning();
+
+          if (!updateResult || updateResult.length === 0) {
+            const [product] = await tx
+              .select()
+              .from(products)
+              .where(eq(products.id, item.productId))
+              .limit(1);
+            
+            if (!product) {
+              logger.error('Product not found in order creation', { 
+                productId: item.productId,
+                userId: req.userId!,
+                orderNumber
+              });
+              throw new Error('PRODUCT_NOT_FOUND');
+            }
+            
+            logger.warn('Insufficient stock', {
+              productId: item.productId,
+              productName: product.name,
+              requested: item.quantity,
+              available: product.stockQuantity,
+              userId: req.userId!
+            });
+            throw new Error('INSUFFICIENT_STOCK');
+          }
         }
 
         if (bonusesUsed > 0) {
-          const [userCheck] = await tx
-            .select()
-            .from(users)
-            .where(eq(users.id, req.userId!))
-            .for('update')
-            .limit(1);
-          
-          if (!userCheck || userCheck.bonusBalance < bonusesUsed) {
-            throw new Error('INSUFFICIENT_BONUS');
-          }
-          
-          await tx
+          const updateResult = await tx
             .update(users)
             .set({ 
               bonusBalance: sql`${users.bonusBalance} - ${bonusesUsed}`,
               updatedAt: new Date()
             })
-            .where(eq(users.id, req.userId!));
+            .where(
+              and(
+                eq(users.id, req.userId!),
+                sql`${users.bonusBalance} >= ${bonusesUsed}`
+              )
+            )
+            .returning();
+
+          if (!updateResult || updateResult.length === 0) {
+            const [user] = await tx
+              .select()
+              .from(users)
+              .where(eq(users.id, req.userId!))
+              .limit(1);
+            
+            logger.warn('Insufficient bonus balance', {
+              userId: req.userId!,
+              bonusesUsed,
+              availableBalance: user?.bonusBalance || 0
+            });
+            throw new Error('INSUFFICIENT_BONUS');
+          }
         }
 
         if (promocodeId) {

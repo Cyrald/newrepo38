@@ -1,4 +1,5 @@
 import cors from 'cors';
+import { logger } from '../utils/logger';
 
 const isProduction = process.env.NODE_ENV === 'production';
 
@@ -11,14 +12,35 @@ export const corsMiddleware = cors({
         ].filter(Boolean);
         
         if (!origin) {
-          callback(new Error('Not allowed by CORS'));
+          callback(null, true);
           return;
         }
         
-        if (allowedOrigins.includes(origin)) {
-          callback(null, true);
-        } else {
-          callback(new Error('Not allowed by CORS'));
+        try {
+          const requestOrigin = new URL(origin);
+          
+          const isAllowed = allowedOrigins.some(allowed => {
+            if (!allowed) return false;
+            try {
+              const allowedOrigin = new URL(allowed);
+              return requestOrigin.origin === allowedOrigin.origin;
+            } catch {
+              return false;
+            }
+          });
+          
+          if (isAllowed) {
+            callback(null, true);
+          } else {
+            logger.warn('CORS blocked request', { 
+              origin,
+              allowedOrigins
+            });
+            callback(null, false);
+          }
+        } catch (error) {
+          logger.error('Invalid Origin header', { origin });
+          callback(null, false);
         }
       }
     : true,
