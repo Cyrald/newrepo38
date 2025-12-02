@@ -43,16 +43,22 @@ Preferred communication style: Simple, everyday language.
 - WebSocket (ws) for real-time communication
 
 **Authentication & Security:**
-- Stub authentication (all requests execute as admin@ecomarket.ru user)
-- Authentication middleware bypassed for development/testing purposes
-- Auth endpoints remain but return stub responses
+- Production-ready JWT authentication with ES256 asymmetric encryption
+- Access tokens (15min) stored in memory, refresh tokens (30 days) in HTTP-only cookies
+- Token family system (TFID) for grouped session invalidation
+- In-memory LRU blacklist for instant token revocation
+- Automatic token refresh with retry logic on 401 errors
+- Session restoration on page reload via silent refresh
+- Password change invalidates all user sessions (tokenVersion++)
+- Logout invalidates current session only (family blacklist)
+- Token rotation on refresh with reuse detection and family revocation
 - Role-based access control (admin, marketer, consultant, customer)
+- User status cache (5min TTL) for performance
 - Rate limiting: auth 15/15min, register 5/hour, uploads 30/hour
 - Helmet for security headers
 - Input sanitization and validation via Zod schemas
 - Path traversal protection for file operations
 - Idempotency keys for critical operations (order creation)
-- **WARNING:** This configuration is NOT production-ready - all endpoints are publicly accessible with admin privileges
 
 **Image Processing Pipeline:**
 - Sharp for image optimization and resizing
